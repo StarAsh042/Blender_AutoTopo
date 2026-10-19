@@ -62,11 +62,11 @@ def _to_friendly_error(err) -> str:
         return ("内置二进制完整性校验失败：文件可能被篡改或版本不匹配。"
                 "请重新安装插件，或更新 bin/integrity.json 后重试。")
 
-    # 可执行文件缺失（AutoRemesher）
-    if ("未找到" in text or "autoremesher" in low
+    # 可执行文件缺失（AutoRemesher / QuadriFlow）
+    if ("未找到" in text or "autoremesher" in low or "quadriflow" in low
             or "可执行" in text or "exe" in low):
-        return ("缺少外部可执行文件：请确认 AutoRemesher 已内置或已在插件"
-                "偏好设置中填写正确的可执行文件路径，然后重试。")
+        return ("缺少外部可执行文件：请确认对应引擎已内置或已在插件偏好设置中"
+                "填写正确的可执行文件路径，然后重试。")
 
     # numpy 缺失
     if ("numpy" in low or "no module named" in low
@@ -116,6 +116,8 @@ def _resolve_exe_path(engine_id: str, context) -> str:
             return ""
         if engine_id == "autoremesher":
             path = getattr(prefs, "autoremesher_path", "") or ""
+        elif engine_id == "quadriflow":
+            path = getattr(prefs, "quadriflow_path", "") or ""
         else:
             path = ""
         path = (path or "").strip()

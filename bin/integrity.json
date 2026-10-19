@@ -28,6 +28,10 @@
     "bin/autoremesher/styles/qwindowsvistastyle.dll": "d9b21182952682fe7ba63af1df24e23ace592c35b3f31eceef9f0eabeb5881b9",
     "bin/autoremesher/tbb.dll": "a60bd008d4aeb612071a34ba0e6558b47103f5bdc68a84d9ab7e0984d9e6a6aa",
     "bin/autoremesher/vcruntime140.dll": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
-    "bin/autoremesher/vcruntime140_1.dll": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"
+    "bin/autoremesher/vcruntime140_1.dll": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
+    "bin/quadriflow/libgcc_s_seh-1.dll": "c3f43525c72eca9dd86308580d547e752be849d2021e30dfae479e14f8cbf0a5",
+    "bin/quadriflow/libstdc++-6.dll": "4d971d9877d1096384a9d1b822a718864f119d8b1e6f48ee3beae578fc9f1320",
+    "bin/quadriflow/libwinpthread-1.dll": "e963ba8a0e965e2db225f9c7fcd328957456e937f6a4113e8b32eba98503a31c",
+    "bin/quadriflow/quadriflow.exe": "43aedb178772889b3aa9f29d65099873e12db80d6446f1457e442a7a48a71d30"
   }
 }

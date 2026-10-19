@@ -7,3 +7,4 @@ registry, so it must be populated before any panel/operator runs.
 
 # Importing the engine modules fires their @register_engine decorators.
 from . import autoremesher_engine  # noqa: F401  (registers AutoRemesherEngine)
+from . import quadriflow_engine    # noqa: F401  (registers QuadriFlowEngine)

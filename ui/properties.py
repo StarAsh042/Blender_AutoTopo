@@ -1,7 +1,7 @@
 """Blender property definitions for AutoTopo.
 
-The engine *parameter* declarations (``ar_*``) must be spelled out
-literally on :class:`AutoTopoProperties` because Blender's
+The engine *parameter* declarations (``qw_*`` / ``ar_*`` / ``qf_*``) must
+be spelled out literally on :class:`AutoTopoProperties` because Blender's
 ``PropertyGroup`` only converts ``bpy.props.*`` declarations into real RNA
 properties when they appear in a genuine module-level ``class`` statement
 body — runtime ``setattr`` / ``type()`` / ``exec`` all leave them as
@@ -38,6 +38,9 @@ class AutoTopoProperties(PropertyGroup):
             ('autoremesher', "AutoRemesher 快速四边面",
              "AutoRemesher (MIT)：各向同性重网格 + 参数化 + 四边面提取，"
              "四边面比例极高、速度快"),
+            ('quadriflow', "QuadriFlow 场对齐",
+             "QuadriFlow (MIT, SIGGRAPH 2020)：方向场对齐 + 全局参数化，"
+             "布线均匀、可扩展到高面数"),
         ],
         default='autoremesher',
     )
@@ -118,3 +121,24 @@ class AutoTopoProperties(PropertyGroup):
         name="输出统计报告", default=False,
         description="额外让 AutoRemesher 写一份统计文件"
                     "（四边面/非四边面/顶点/耗时）")
+
+    # === QuadriFlow 参数（与 engines/quadriflow_engine.py 同步） ===
+
+    qf_preserve_sharp: BoolProperty(
+        name="保留锐边", default=False,
+        description="-sharp：保留输入网格的锐利特征边（上游默认关闭）")
+    qf_preserve_boundary: BoolProperty(
+        name="保留边界", default=False,
+        description="-boundary：为开放边界添加约束（上游默认关闭）")
+    qf_adaptive_scale: BoolProperty(
+        name="自适应尺度", default=False,
+        description="-adaptive：允许尺度随曲率自适应（上游默认关闭）")
+    qf_minimum_cost_flow: BoolProperty(
+        name="最小费用流模式", default=False,
+        description="-mcf：改用最小费用流求解整数约束，README 推荐的替代模式")
+    qf_aggressive_sat: BoolProperty(
+        name="激进 SAT 求解", default=False,
+        description="-sat：更激进的 SAT 求解（上游默认关闭）")
+    qf_seed: IntProperty(
+        name="随机种子", default=0, min=0, soft_max=100000,
+        description="-seed：固定随机种子以获得可复现结果（0 表示由程序决定）")
