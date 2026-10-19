@@ -10,7 +10,7 @@ Core Design Principle: Silhouette fidelity > quad purity.
 bl_info = {
     "name": "AutoTopo",
     "author": "AutoTopo Team",
-    "version": (0, 3, 0),
+    "version": (1, 0, 0),
     "blender": (3, 4, 0),
     "location": "View3D > Sidebar > 自动拓扑",
     "description": "Automatic retopology with silhouette preservation",
@@ -76,9 +76,6 @@ def register():
             f"AutoTopo: 缺少依赖库 numpy，请运行: pip install numpy"
         ) from e
 
-    # Importing the UI modules populates the engine registry through
-    # ``..engines.base`` (importing a submodule runs the package
-    # ``__init__``, which fires the ``@register_engine`` decorators).
     from .ui.properties import AutoTopoProperties
     from .ui.panels import AUTOTOPO_PT_MainPanel
     from .ui.operators import (
