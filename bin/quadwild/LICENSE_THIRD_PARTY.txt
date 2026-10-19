@@ -1,0 +1,42 @@
+# 第三方原生库 — 许可与归属（组件粒度）
+# AutoTopo (Blender 插件) Third-Party License Notice
+# 本文件替代旧版错误声明（旧版将 QuadWild 整体标为 MIT，与实际分发许可不符）。
+
+## 1. 捆绑二进制来源
+- bin/quadwild/lib_quadwild.dll、lib_quadpatches.dll 及 config/ 目录：
+  提取自 QRemeshify v1.1.0 (https://github.com/ksami/QRemeshify)。
+- QRemeshify 自身以 GNU GPL v3 分发（已核实其仓库 LICENSE 为 GPLv3 全文）。
+  故上述预编译 DLL 作为 QRemeshify 的构建产物，受 GPLv3 约束。
+- 区分：QuadWild *算法源码* (https://github.com/george-ye/QuadWild) 上游标注 MIT；
+  但本插件分发的是 QRemeshify 的 *预编译 DLL*，适用 GPLv3。
+  MIT 与 GPLv3 兼容，组合物有效许可为 GPLv3。
+
+## 2. 组件许可表
+| 文件 | 位置 | 许可 | 上游 / 说明 |
+| lib_quadwild.dll, lib_quadpatches.dll, config/ | bin/quadwild/ | GPLv3 | QRemeshify(ksami)，含 QuadWild/QuadPatches 构建 |
+| Qt5Core/Gui/Svg/Widgets/WinExtras.dll | bin/autoremesher/ | LGPLv3 | Qt Toolkit(The Qt Company)；可替换/重链 |
+| autoremesher.exe | bin/autoremesher/ | MIT | huxingyi/autoremesher |
+| quadriflow.exe | bin/quadriflow/ | MIT | hjwdzh/QuadriFlow |
+| libgcc_s_seh-1 / libstdc++-6 / libwinpthread-1.dll | bin/quadriflow/ | GPLv3 + GCC Runtime Library Exception | MinGW-w64 运行时；该例外允许与非 GPL 二进制同分发 |
+| autotopo_native.dll | bin/ | MIT(项目自有) | 由本插件 native/autotopo_native.cpp 编译，版权 StarAsh042 |
+
+## 3. 整体分发许可
+你不能将本捆绑插件以闭源/专有许可再分发。
+本插件与 Blender(GPLv3) 组合，并捆绑 GPLv3(QuadWild DLL) 与 LGPLv3(Qt5) 组件，
+因此整体分发物须按 GPLv3 对待：
+- 须向接收者提供 GPLv3 组件的对应源码（见第 4 节）；
+- 插件自有源码以 MIT 发布，但分发时需满足上述 copyleft 义务；
+- 仅在本机内部使用、不对外分发时，不触发上述 copyleft 义务。
+
+## 4. 对应源码与许可全文
+- GPLv3 全文: https://www.gnu.org/licenses/gpl-3.0.txt (建议随包附 COPYING.GPLv3)
+- LGPLv3 全文: https://www.gnu.org/licenses/lgpl-3.0.txt (建议随包附 COPYING.LGPLv3)
+- QRemeshify(含 QuadWild/QuadPatches 构建源码): https://github.com/ksami/QRemeshify
+- Qt5(LGPLv3, 可重链说明): https://www.qt.io
+- AutoRemesher(MIT): https://github.com/huxingyi/autoremesher
+- QuadriFlow(MIT): https://github.com/hjwdzh/QuadriFlow
+- george-ye/QuadWild 算法源码(MIT): https://github.com/george-ye/QuadWild
+- MinGW-w64 运行时(GPLv3 + 运行时例外): https://www.mingw-w64.org
+
+## 5. 运行时提示
+bin/quadwild/ 目录不可删除：QuadWild 引擎在运行时通过 ctypes 加载其中的 DLL。

@@ -62,6 +62,13 @@ def _to_friendly_error(err) -> str:
         return ("内置二进制完整性校验失败：文件可能被篡改或版本不匹配。"
                 "请重新安装插件，或更新 bin/integrity.json 后重试。")
 
+    # QuadWild 原生库缺失
+    if ("库缺失" in text or "引擎库缺失" in text
+            or "lib_quadwild" in low or "lib_quadpatches" in low
+            or ("quadwild" in low and "filenotfound" in low)):
+        return ("缺少 QuadWild 算法库：请确认插件 bin/quadwild 目录下已放入 "
+                "lib_quadwild.dll 与 lib_quadpatches.dll，然后重启 Blender 重试。")
+
     # 可执行文件缺失（AutoRemesher / QuadriFlow）
     if ("未找到" in text or "autoremesher" in low or "quadriflow" in low
             or "可执行" in text or "exe" in low):

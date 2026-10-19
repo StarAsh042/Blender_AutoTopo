@@ -32,6 +32,8 @@
     "bin/quadriflow/libgcc_s_seh-1.dll": "c3f43525c72eca9dd86308580d547e752be849d2021e30dfae479e14f8cbf0a5",
     "bin/quadriflow/libstdc++-6.dll": "4d971d9877d1096384a9d1b822a718864f119d8b1e6f48ee3beae578fc9f1320",
     "bin/quadriflow/libwinpthread-1.dll": "e963ba8a0e965e2db225f9c7fcd328957456e937f6a4113e8b32eba98503a31c",
-    "bin/quadriflow/quadriflow.exe": "43aedb178772889b3aa9f29d65099873e12db80d6446f1457e442a7a48a71d30"
+    "bin/quadriflow/quadriflow.exe": "43aedb178772889b3aa9f29d65099873e12db80d6446f1457e442a7a48a71d30",
+    "bin/quadwild/lib_quadpatches.dll": "cc03cca4f1f69043bb137581b08d06438f6da3643f1a470a5674857af374a946",
+    "bin/quadwild/lib_quadwild.dll": "f658fb002f9b9f10214a479ba67b80fd08204b5444096fa67f5b67a33a38061f"
   }
 }

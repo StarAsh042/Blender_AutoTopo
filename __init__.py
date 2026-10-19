@@ -10,7 +10,7 @@ Core Design Principle: Silhouette fidelity > quad purity.
 bl_info = {
     "name": "AutoTopo",
     "author": "AutoTopo Team",
-    "version": (0, 2, 0),
+    "version": (0, 3, 0),
     "blender": (3, 4, 0),
     "location": "View3D > Sidebar > 自动拓扑",
     "description": "Automatic retopology with silhouette preservation",
