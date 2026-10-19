@@ -23,18 +23,47 @@ from ..engines.base import get_engine
 _progress_lock = threading.Lock()
 _progress_step = ""
 _progress_pct = 0.0
+# 显示层平滑：四边面化阶段最多重试 3 次，引擎每次上报同一百分比
+# （quadwild_engine.py 的重试循环），会让最长阶段看起来「冻结」。
+# 这里统计重复上报次数，把展示值逐步推进并标注「重试 n/3」，
+# 使进度条持续前进、用户能看出仍在工作而非卡死。
+_progress_last_raw = -1.0
+_progress_repeat = 0
+_RETRY_NUDGE = 4.0        # 每次重复上报推进的百分比
+_RETRY_MAX_NUDGE = 12.0   # 单个阶段内最多推进的百分比
+_RETRY_STAGE_HINT = "四边面化"  # 需要标注重试次数的阶段名
 
 
 def _progress_callback(step_name: str, pct: float):
     """Called from pipeline worker thread to report progress."""
     global _progress_step, _progress_pct
+    global _progress_last_raw, _progress_repeat
+
     try:
         pct = float(pct)
     except (TypeError, ValueError):
         return
+
     with _progress_lock:
-        _progress_step = step_name
-        _progress_pct = pct
+        if pct <= _progress_last_raw + 1e-6:
+            # 百分比没有前进 → 引擎重复了同一阶段（四边面化重试）。
+            _progress_repeat += 1
+        else:
+            _progress_repeat = 0
+        _progress_last_raw = max(_progress_last_raw, pct)
+
+        display = pct
+        step = step_name
+        if _progress_repeat > 0:
+            display = min(
+                pct + min(_progress_repeat * _RETRY_NUDGE, _RETRY_MAX_NUDGE),
+                99.0,
+            )
+            if _RETRY_STAGE_HINT in (step_name or ""):
+                step = f"{step_name}（重试 {_progress_repeat}/3）"
+
+        _progress_step = step
+        _progress_pct = display
 
 
 # ── Shared run state (module-level, written by worker thread) ──
@@ -42,6 +71,7 @@ _pipeline_result = None
 _pipeline_error = ""
 _input_mesh = None
 _obj_name = ""
+_cancel_requested = False
 
 
 def _to_friendly_error(err) -> str:
@@ -56,8 +86,13 @@ def _to_friendly_error(err) -> str:
     text = str(err).strip()
     low = text.lower()
 
+    # 用户取消
+    if "用户取消" in text or low in ("cancelled", "canceled") \
+            or "interrupted" in low:
+        return "已取消：本次拓扑重建被中止，可调整参数后重新执行。"
+
     # 内置二进制完整性校验失败（被篡改 / 版本不符）。必须早于
-    # 「缺少可执行文件」分支，否则会被误判为文件缺失。
+    # 「缺少可执行文件 / 库」分支，否则会被误判为文件缺失。
     if "完整性校验失败" in text or "integrity" in low:
         return ("内置二进制完整性校验失败：文件可能被篡改或版本不匹配。"
                 "请重新安装插件，或更新 bin/integrity.json 后重试。")
@@ -177,12 +212,17 @@ def _poll_timer():
     if _pipeline_error:
         err = _pipeline_error
         _pipeline_error = ""
+        is_cancel = err in ("用户取消", "Cancelled")
         for scene in bpy.data.scenes:
             if hasattr(scene, 'auto_topo'):
-                scene.auto_topo.status_message = _to_friendly_error(err)
+                if is_cancel:
+                    scene.auto_topo.status_message = "已取消"
+                else:
+                    scene.auto_topo.status_message = _to_friendly_error(err)
                 scene.auto_topo.step_name = ""
                 scene.auto_topo.is_processing = False
-        logger.error(f"Pipeline error: {err}")
+        if not is_cancel:
+            logger.error(f"Pipeline error: {err}")
         return None  # Stop timer
 
     return 0.5  # Continue polling every 0.5s (reduced frequency for less UI lag)
@@ -266,7 +306,7 @@ class AUTOTOPO_OT_Retopologize(Operator):
 
     def execute(self, context):
         global _progress_step, _progress_pct, _pipeline_result, _pipeline_error
-        global _input_mesh, _obj_name
+        global _input_mesh, _obj_name, _progress_last_raw, _progress_repeat
 
         # Defense check: ensure a mesh object is selected
         obj = context.active_object
@@ -284,10 +324,12 @@ class AUTOTOPO_OT_Retopologize(Operator):
             props.status_message = _to_friendly_error(f"未知引擎 '{engine_id}'")
             return {'CANCELLED'}
 
-        # Reset progress state
+        # Reset progress state (including display-layer smoothing)
         with _progress_lock:
             _progress_step = ""
             _progress_pct = 0.0
+            _progress_last_raw = -1.0
+            _progress_repeat = 0
         _pipeline_result = None
         _pipeline_error = ""
         _obj_name = obj.name
@@ -338,23 +380,46 @@ class AUTOTOPO_OT_Retopologize(Operator):
 
 def _run_engine_thread(engine_cls, input_mesh, target_face_count, settings):
     """Engine execution in background thread (engine-agnostic)."""
-    global _pipeline_result, _pipeline_error
+    global _pipeline_result, _pipeline_error, _cancel_requested
     try:
+        if _cancel_requested:
+            _pipeline_error = "用户取消"
+            _cancel_requested = False
+            return
         result = engine_cls.run(
             input_mesh,
             target_face_count=target_face_count,
             settings=settings,
             progress_callback=_progress_callback,
-            cancel_check=lambda: False,
+            cancel_check=lambda: _cancel_requested,
         )
-        _pipeline_result = result
+        if not result.success and result.error_message == "用户取消":
+            _pipeline_error = "用户取消"
+        else:
+            _pipeline_result = result
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
         _pipeline_error = f"{type(e).__name__}: {e}"
         logger.error(f"Engine thread error:\n{tb}")
     finally:
+        _cancel_requested = False
         time.sleep(0.05)
+
+
+class AUTOTOPO_OT_Cancel(Operator):
+    """取消正在进行的拓扑重建。"""
+
+    bl_idname = "autotopo.cancel"
+    bl_label = "取消拓扑重建"
+    bl_description = "取消正在进行的拓扑重建"
+
+    def execute(self, context):
+        global _cancel_requested
+        _cancel_requested = True
+        context.scene.auto_topo.status_message = "正在取消（当前阶段结束后生效）..."
+        self.report({'WARNING'}, "已请求取消拓扑重建")
+        return {'FINISHED'}
 
 
 class AUTOTOPO_OT_SetFaceCount(Operator):

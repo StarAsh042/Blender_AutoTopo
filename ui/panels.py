@@ -13,6 +13,30 @@ from bpy.types import Panel
 from ..engines.base import get_engine
 
 
+# Blender < 4.0 没有 layout.progress()，回退用的文本进度条宽度
+_PROGRESS_BAR_WIDTH = 20
+
+
+def _draw_progress(layout, props):
+    """只读进度显示（用户无法拖动）。
+
+    Blender 4.0+ 提供 layout.progress()；3.4 没有该 API，退回纯展示的
+    文本进度条。两条路径都不使用可编辑的 box.prop()——旧实现会把
+    FloatProperty 渲染成可拖动的滑块。
+    """
+    factor = max(0.0, min(props.progress, 100.0)) / 100.0
+    pct = props.progress
+
+    progress_fn = getattr(layout, "progress", None)
+    if callable(progress_fn):
+        progress_fn(factor=factor, text=f"进度 {pct:.0f}%")
+        return
+
+    filled = int(round(factor * _PROGRESS_BAR_WIDTH))
+    bar = "█" * filled + "░" * (_PROGRESS_BAR_WIDTH - filled)
+    layout.label(text=f"进度 [{bar}] {pct:.0f}%")
+
+
 class AUTOTOPO_PT_MainPanel(Panel):
     """AutoTopo 主面板 - 3D 视图侧边栏。"""
 
@@ -108,7 +132,17 @@ class AUTOTOPO_PT_MainPanel(Panel):
 
     @staticmethod
     def _draw_status(layout, props):
-        """状态/结果信息区域。"""
+        """进度/状态/结果信息区域。"""
+        # === 进度显示 ===
+        if props.is_processing:
+            box = layout.box()
+            box.label(text=f"步骤: {props.step_name}", icon='TIME')
+            # 只读进度：4.0+ 用 layout.progress()，3.4 退回文本进度条。
+            _draw_progress(box, props)
+            row = box.row()
+            row.scale_y = 1.5
+            row.operator("autotopo.cancel", icon='PANEL_CLOSE', text="取消")
+
         # === 状态 ===
         if props.status_message:
             box = layout.box()

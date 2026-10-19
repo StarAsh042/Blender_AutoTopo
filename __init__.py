@@ -59,6 +59,7 @@ def register():
     from .ui.panels import AUTOTOPO_PT_MainPanel
     from .ui.operators import (
         AUTOTOPO_OT_Retopologize,
+        AUTOTOPO_OT_Cancel,
         AUTOTOPO_OT_SetFaceCount,
     )
     from .ui.preferences import AUTOTOPO_Preferences
@@ -81,6 +82,7 @@ def register():
         bpy.app.handlers.load_post.append(_reset_runtime_state)
 
     bpy.utils.register_class(AUTOTOPO_OT_Retopologize)
+    bpy.utils.register_class(AUTOTOPO_OT_Cancel)
     bpy.utils.register_class(AUTOTOPO_OT_SetFaceCount)
 
     bpy.utils.register_class(AUTOTOPO_PT_MainPanel)
@@ -98,13 +100,14 @@ def unregister():
         auto_topo = getattr(scene, 'auto_topo', None)
         if auto_topo is not None and auto_topo.is_processing:
             raise RuntimeError(
-                "AutoTopo: 重拓扑正在运行，请等待完成后再卸载插件"
+                "AutoTopo: 重拓扑正在运行，请先取消或等待完成后再卸载插件"
             )
 
     from .ui.properties import AutoTopoProperties
     from .ui.panels import AUTOTOPO_PT_MainPanel
     from .ui.operators import (
         AUTOTOPO_OT_Retopologize,
+        AUTOTOPO_OT_Cancel,
         AUTOTOPO_OT_SetFaceCount,
     )
     from .ui.preferences import AUTOTOPO_Preferences
@@ -115,6 +118,7 @@ def unregister():
         bpy.app.handlers.load_post.remove(_reset_runtime_state)
 
     bpy.utils.unregister_class(AUTOTOPO_OT_SetFaceCount)
+    bpy.utils.unregister_class(AUTOTOPO_OT_Cancel)
     bpy.utils.unregister_class(AUTOTOPO_OT_Retopologize)
 
     del bpy.types.Scene.auto_topo
