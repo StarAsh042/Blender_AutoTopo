@@ -92,7 +92,8 @@ def register():
 def unregister():
     """Unregister the AutoTopo plugin from Blender."""
     # Refuse to unregister while a remesh worker is still running:
-    # dropping classes mid-run breaks the completion callback.
+    # dropping classes mid-run breaks the completion callback, and
+    # releasing the QuadWild DLLs under a running thread would crash.
     for scene in bpy.data.scenes:
         auto_topo = getattr(scene, 'auto_topo', None)
         if auto_topo is not None and auto_topo.is_processing:
@@ -119,6 +120,22 @@ def unregister():
     del bpy.types.Scene.auto_topo
     bpy.utils.unregister_class(AutoTopoProperties)
     bpy.utils.unregister_class(AUTOTOPO_Preferences)
+
+    # Release the native libraries (Windows file lock) so Blender's
+    # "Remove" addon operator can delete the plugin folder within the
+    # same session. Two independent handles: the QuadWild DLLs and the
+    # optional C++ acceleration DLL.
+    try:
+        from .engines.quadwild_engine import release_native_libs
+        release_native_libs()
+    except Exception:
+        pass
+
+    try:
+        from .utils import native as _native
+        _native.release()
+    except Exception:
+        pass
 
     from .utils.logger import logger
     logger.info("AutoTopo plugin unregistered")
