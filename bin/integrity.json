@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "files": {
+    "bin/autoremesher/Qt5Core.dll": "8d2ff4ce9096ddccc4f4cd62c2e41fc854cfd1b0d6e8d296645a7f5fd4ae565a",
+    "bin/autoremesher/Qt5Gui.dll": "5e7d2d41b8b92a880e83b8cc0ca173f5da61218604186196787ee1600956be1e",
+    "bin/autoremesher/Qt5Svg.dll": "7348cfc6444438b8845fb3f59381227325d40ca2187d463e82fc7b8e93e38db5",
+    "bin/autoremesher/Qt5Widgets.dll": "3788c669d4b645e5a576de9fc77fca776bf516d43c89143dc2ca28291ba14358",
+    "bin/autoremesher/Qt5WinExtras.dll": "9987b4bff62ef5c0c75dfcdbe50b1d02d0ae38a8123a816fbe4326ea8538069a",
+    "bin/autoremesher/autoremesher.exe": "103bd621bfe828d4f1fbc62ace095483eeb184e29e647e739894c3b9cc93e877",
+    "bin/autoremesher/d3dcompiler_47.dll": "a05f99734f7c4822fefc12b367af21fd0976ed6608752fb1e1e80b6ece7ecbbb",
+    "bin/autoremesher/imageformats/qgif.dll": "36174dd4c5f37c5f065c7a26e0ac65c4c3a41fdc0416882af856a23a5d03bb9d",
+    "bin/autoremesher/imageformats/qicns.dll": "f4a229a082d16f80016f366156a2b951550f1e9df6d4177323bbedd92a429909",
+    "bin/autoremesher/imageformats/qico.dll": "1982a635db9652304131c9c6ff9a693e70241600d2ef22b354962aa37997de0b",
+    "bin/autoremesher/imageformats/qjpeg.dll": "fb4e980cb5fafa8a4cd4239329aed93f7c32ed939c94b61fb2df657f3c6ad158",
+    "bin/autoremesher/imageformats/qsvg.dll": "b3498f0a10ac4cb42cf7213db4944a34594ff36c78c50a0f249c9085d1b1ff39",
+    "bin/autoremesher/imageformats/qtga.dll": "5b641dec81aec1cf7ac0cce9fc067bb642fbd32da138a36e3bdac3bb5b36c37a",
+    "bin/autoremesher/imageformats/qtiff.dll": "825174429ced6b3dab18115dbc6c9da07bf5248c86ec1bd5c0dcaeca93b4c22d",
+    "bin/autoremesher/imageformats/qwbmp.dll": "0f05969fb926a62a338782b32446ea3e28e4bfbffc0dbd25ed303fab3404abac",
+    "bin/autoremesher/imageformats/qwebp.dll": "6e37acd0d357871f92b7fde7206c904c734caa02f94544df646957df8c4987af",
+    "bin/autoremesher/libEGL.dll": "32092de077fd57b6ef355705ec46c6d21f6d72fbe3d3a5dd628f2a29185a96fa",
+    "bin/autoremesher/libGLESv2.dll": "50fad5605b3d57627848b3b84a744dfb6a045609b8236b04124f2234676758d8",
+    "bin/autoremesher/msvcp140.dll": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+    "bin/autoremesher/msvcp140_1.dll": "bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d",
+    "bin/autoremesher/opengl32sw.dll": "963641a718f9cae2705d5299eae9b7444e84e72ab3bef96a691510dd05fa1da4",
+    "bin/autoremesher/platforms/qoffscreen.dll": "54097626faae718a4bc8e436c85b4ded8f8fb7051b2b9563a29aee4ed5c32b7b",
+    "bin/autoremesher/platforms/qwindows.dll": "3333ba244c97264e3bd19db5953efa80a6e47aaced9d337ac3287ec718162b85",
+    "bin/autoremesher/styles/qwindowsvistastyle.dll": "d9b21182952682fe7ba63af1df24e23ace592c35b3f31eceef9f0eabeb5881b9",
+    "bin/autoremesher/tbb.dll": "a60bd008d4aeb612071a34ba0e6558b47103f5bdc68a84d9ab7e0984d9e6a6aa",
+    "bin/autoremesher/vcruntime140.dll": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+    "bin/autoremesher/vcruntime140_1.dll": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"
+  }
+}
