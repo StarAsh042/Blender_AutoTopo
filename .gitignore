@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+
+# Test / tooling caches
+.pytest_cache/
+
+# Build artifacts
+dist/
+
+# Internal deliverables & agent workspace
+deliverables/
+.workbuddy-ai/
+
+# Stray archive bundles under bin/
+bin/autoremesher/*.zip
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
