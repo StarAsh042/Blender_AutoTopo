@@ -20,6 +20,29 @@ bl_info = {
 import bpy
 
 
+def _migrate_sharp_angle(props):
+    """Migrate sharp_angle_threshold to the current unit (idempotent).
+
+    History of the stored value:
+    - v1: normal-deviation degrees (flat=0, default 30)
+    - v2: FloatProperty(subtype='ANGLE') — display bug only, stored
+      values were still the v1 ones (min=10 rules out radian storage)
+    - v3 (current): plain interior-dihedral degrees (flat=180),
+      default 90
+
+    Detection is value based: v1 values are < 100 and every converted
+    result lands >= 90, so the rules never fire twice on the same
+    value. Blender does not save a property equal to its default, so
+    untouched v3 scenes stay absent here and simply show the default.
+    """
+    v = props.sharp_angle_threshold
+    if 10.0 <= v < 100.0:
+        # v1 stored normal-deviation degrees; the old default 30 maps
+        # to the current default, other values convert semantically
+        v = 90.0 if v == 30.0 else 180.0 - v
+        props.sharp_angle_threshold = min(max(v, 10.0), 180.0)
+
+
 @bpy.app.handlers.persistent
 def _reset_runtime_state(dummy=None):
     """Clear runtime status so the sidebar always starts clean.
@@ -40,6 +63,7 @@ def _reset_runtime_state(dummy=None):
             props.progress = 0.0
             props.step_name = ""
             props.last_result_info = ""
+            _migrate_sharp_angle(props)
 
 
 def register():
