@@ -1,0 +1,13 @@
+# Development / test dependencies for Blender AutoTopo.
+#
+# Runtime note: the addon itself only needs ``numpy`` (and Blender's own
+# bundled ``bpy``/``bmesh``/``mathutils``). Blender 3.4.1 ships numpy
+# 2.2.6, which is the runtime baseline for reproducible results — pin it
+# exactly. The engine output (quad ratio, silhouette error) is
+# version-sensitive, so CI must run against this line.
+#
+# A dev venv may carry a different numpy (e.g. 2.5.x); test/conftest.py
+# only *warns* on a mismatch so a dev-venv difference never turns the
+# suite red.
+numpy==2.2.6
+pytest>=7.0
