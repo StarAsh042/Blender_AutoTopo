@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Two independent gates:
+#   pure-pytest        - numpy-only tests + packaging-artifact checks (any OS)
+#   blender-background - Blender 3.4.1 headless run of the 3-engine matrix
+#                        and the operator integration / cancel / error tests.
+# Windows is used for the Blender job so the bundled Windows .exe/.dll
+# backends (autoremesher, quadriflow, quadwild) actually execute.
+
+jobs:
+  pure-pytest:
+    name: Pure Python tests (no Blender)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Byte-compile gate (catch syntax errors / half-written files)
+        run: python -m compileall -q __init__.py engines ui utils scripts test
+
+      - name: Build addon package (for the artifact test)
+        run: python scripts/package_addon.py
+
+      - name: Run pure-pytest suite
+        run: python -m pytest -q
+
+  blender-background:
+    name: Blender 3.4.1 background tests (3-engine matrix)
+    runs-on: windows-latest
+    env:
+      BLENDER_VERSION: "3.4.1"
+      # Generous perf budgets for slower CI runners (defaults are tighter).
+      AUTOTOPO_PERF_DIH: "10"
+      AUTOTOPO_PERF_SIL: "10"
+      AUTOTOPO_PERF_ERR: "20"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Download Blender ${{ env.BLENDER_VERSION }}
+        shell: pwsh
+        run: |
+          $url = "https://download.blender.org/release/Blender3.4/blender-$env:BLENDER_VERSION-windows-x64.zip"
+          Invoke-WebRequest -Uri $url -OutFile blender.zip
+          Expand-Archive -Path blender.zip -DestinationPath C:\blender
+          $exe = Get-ChildItem -Path C:\blender -Recurse -Filter blender.exe | Select-Object -First 1
+          if (-not $exe) { throw "blender.exe not found after extraction" }
+          "BLENDER_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Using $($exe.FullName)"
+
+      - name: Blender background tests
+        shell: pwsh
+        run: |
+          $tests = @(
+            "test/test_register_smoke.py",
+            "test/test_addon_integration.py",
+            "test/test_engine_dispatch.py",
+            "test/test_quadwild_e2e.py",
+            "test/test_quadwild_adaptive.py",
+            "test/test_dll_release.py",
+            "test/test_cancel_and_errors.py",
+            "test/test_perf_vectorized.py"
+          )
+          $failed = @()
+          foreach ($t in $tests) {
+            Write-Host "=== $t ==="
+            & $env:BLENDER_EXE --background --factory-startup --python-exit-code 1 --python $t
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "FAILED: $t (exit $LASTEXITCODE)"
+              $failed += $t
+            }
+          }
+          if ($failed.Count -gt 0) {
+            Write-Error "Blender background tests failed: $($failed -join ', ')"
+            exit 1
+          }
+          Write-Host "All Blender background tests passed."
