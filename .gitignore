@@ -8,6 +8,9 @@ __pycache__/
 # Build artifacts
 dist/
 
+# Rust build artifacts (native/autotopo_native crate)
+native/autotopo_native/target/
+
 # Internal deliverables & agent workspace
 deliverables/
 .workbuddy-ai/
