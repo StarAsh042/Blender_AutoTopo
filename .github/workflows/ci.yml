@@ -1,85 +1,211 @@
 name: CI
 
+# Gate layout (see 项目迭代_Blender插件.md §9 and GitHub_CI书写规范.md §2.1):
+#   rust           - fmt / clippy / test / build + golden-master drift guard
+#   python         - byte-compile + pure-pytest (Blender/native cases skip)
+#   package        - build the installable zip, validate contents/version
+#   blender-smoke  - install the packaged zip into Blender 3.4.1 and run
+#                    the 3-engine background matrix (Windows-only addon)
+#   security       - pip-audit / gitleaks / cargo audit
+#   ci             - stable aggregate; the only branch-protection check
+#
+# Deviation from the generic Blender template, with reason:
+#   * rust and blender-smoke run on windows-latest because this addon is
+#     Windows-only; the shipped native layer is autotopo_native.dll and the
+#     bundled engine binaries are .exe/.dll. A Linux build would produce a
+#     .so that never ships and cannot execute the engine matrix.
+#   * wheel / maturin is N/A: the addon is distributed as a Blender zip,
+#     not as a PyPI wheel. The native library is a ctypes DLL.
+#   * ruff is not configured in this repository yet; adding it is a
+#     separate dependency change, so it is not smuggled into the CI gate.
+
 on:
-  push:
   pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
   workflow_dispatch:
 
-# Two independent gates:
-#   pure-pytest        - numpy-only tests + packaging-artifact checks (any OS)
-#   blender-background - Blender 3.4.1 headless run of the 3-engine matrix
-#                        and the operator integration / cancel / error tests.
-# Windows is used for the Blender job so the bundled Windows .exe/.dll
-# backends (autoremesher, quadriflow, quadwild) actually execute.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BLENDER_VERSION: "3.4.1"
+  BLENDER_ZIP: "blender-3.4.1-windows-x64.zip"
 
 jobs:
   rust:
-    name: Rust gates (fmt / clippy / test / build)
+    name: rust
     runs-on: windows-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: native/autotopo_native
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
         with:
-          toolchain: "1.99.0"
-          components: rustfmt, clippy
+          python-version-file: .python-version
+
+      # Toolchain and components come from rust-toolchain.toml (single
+      # source of truth); do not duplicate the version in this workflow.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          workspaces: native/autotopo_native -> target
 
       - name: cargo fmt --all --check
         run: cargo fmt --all --check
 
-      - name: cargo clippy --all-targets -- -D warnings
-        run: cargo clippy --all-targets -- -D warnings
+      - name: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
-      - name: cargo test --all
-        run: cargo test --all
+      - name: cargo test --all --locked
+        run: cargo test --all --locked
 
-      - name: cargo build --release
-        run: cargo build --release
+      - name: cargo build --release --locked
+        run: cargo build --release --locked
 
       # Drift guard: the freshly built DLL must reproduce the golden
-      # master captured from the C++ implementation — catches a bin/
-      # DLL that no longer matches native/autotopo_native/src.
+      # master captured from the old C++ implementation. This catches a
+      # bin/ DLL that no longer matches native/autotopo_native/src.
       - name: Fresh DLL matches golden master
         working-directory: .
         run: |
           python -m pip install -r requirements-dev.txt
-          $dll = Join-Path $env:GITHUB_WORKSPACE "native\autotopo_native\target\release\autotopo_native.dll"
-          $env:AUTOTOPO_NATIVE_DLL = $dll
+          $env:AUTOTOPO_NATIVE_DLL = Join-Path $env:GITHUB_WORKSPACE "native\autotopo_native\target\release\autotopo_native.dll"
           python -m pytest -q test/test_native_golden.py
 
-  pure-pytest:
-    name: Pure Python tests (no Blender)
-    runs-on: ubuntu-latest
+  python:
+    name: python
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
 
       - name: Install dev dependencies
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Byte-compile gate (catch syntax errors / half-written files)
+      - name: Byte-compile gate
         run: python -m compileall -q __init__.py engines ui utils scripts test
 
-      - name: Build addon package (for the artifact test)
+      # The package artifact test requires a zip newer than every source
+      # file, so build it before pytest.
+      - name: Build addon package
         run: python scripts/package_addon.py
 
-      - name: Run pure-pytest suite
-        run: python -m pytest -q
+      - name: pytest (pure Python; Blender/native cases skip)
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          python -m pytest -q --junitxml=reports/pytest.xml
 
-  blender-background:
-    name: Blender 3.4.1 background tests (3-engine matrix)
+      - name: Upload pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: reports/pytest.xml
+          retention-days: 7
+          if-no-files-found: warn
+
+  package:
+    name: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Build addon zip
+        run: python scripts/package_addon.py
+
+      - name: Validate package contents and version
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          import zipfile
+          from pathlib import Path
+
+          zips = sorted(Path("dist").glob("Blender_AutoTopo-*.zip"))
+          assert len(zips) == 1, f"expected exactly one zip, got {zips}"
+          zp = zips[0]
+          m = re.fullmatch(r"Blender_AutoTopo-(\d+\.\d+\.\d+)\.zip", zp.name)
+          assert m, f"unexpected zip name: {zp.name}"
+          pkg_version = m.group(1)
+
+          with zipfile.ZipFile(zp) as z:
+              names = z.namelist()
+              tops = {n.split("/", 1)[0] for n in names}
+              assert tops == {"Blender_AutoTopo"}, f"unexpected top-level entries: {tops}"
+              init = z.read("Blender_AutoTopo/__init__.py").decode("utf-8")
+              v = re.search(r'"version":\s*\((\d+),\s*(\d+),\s*(\d+)\)', init)
+              assert v, "bl_info version not found in packaged __init__.py"
+              bl_version = ".".join(v.groups())
+              assert bl_version == pkg_version, (
+                  f"version mismatch: bl_info={bl_version} zip={pkg_version}")
+              required = (
+                  "Blender_AutoTopo/bin/autotopo_native.dll",
+                  "Blender_AutoTopo/bin/integrity.json",
+                  "Blender_AutoTopo/bin/autoremesher/autoremesher.exe",
+                  "Blender_AutoTopo/bin/quadriflow/quadriflow.exe",
+                  "Blender_AutoTopo/bin/quadwild/lib_quadwild.dll",
+                  "Blender_AutoTopo/utils/native.py",
+              )
+              missing = [r for r in required if r not in names]
+              assert not missing, f"missing required entries: {missing}"
+              forbidden = (
+                  "Blender_AutoTopo/.github/",
+                  "Blender_AutoTopo/deliverables/",
+                  "Blender_AutoTopo/dist/",
+                  "Blender_AutoTopo/native/target/",
+              )
+              bad = [n for n in names if n.startswith(forbidden)]
+              assert not bad, f"dev artifacts inside package: {bad[:5]}"
+          print(f"package OK: {zp.name} ({len(names)} entries, version {bl_version})")
+          PY
+
+      - name: Write SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum Blender_AutoTopo-*.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload addon package
+        uses: actions/upload-artifact@v4
+        with:
+          name: addon-zip
+          path: |
+            dist/Blender_AutoTopo-*.zip
+            dist/SHA256SUMS.txt
+          retention-days: 7
+
+  blender_smoke:
+    name: blender-smoke
     runs-on: windows-latest
+    timeout-minutes: 60
     env:
-      BLENDER_VERSION: "3.4.1"
-      # Generous perf budgets for slower CI runners (defaults are tighter).
+      # Generous budgets for slower CI runners (defaults are tighter).
       AUTOTOPO_PERF_DIH: "10"
       AUTOTOPO_PERF_SIL: "10"
       AUTOTOPO_PERF_ERR: "20"
@@ -88,25 +214,68 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version-file: .python-version
 
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Download Blender ${{ env.BLENDER_VERSION }}
+      - name: Build addon zip
+        run: python scripts/package_addon.py
+
+      - name: Cache Blender ${{ env.BLENDER_VERSION }}
+        id: blender_cache
+        uses: actions/cache@v4
+        with:
+          path: C:\blender
+          # Version fully determines the archive contents; the official
+          # .sha256 is verified on every fresh download below.
+          key: blender-${{ env.BLENDER_VERSION }}-windows-x64
+
+      - name: Download and verify Blender ${{ env.BLENDER_VERSION }}
+        if: steps.blender_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          $url = "https://download.blender.org/release/Blender3.4/blender-$env:BLENDER_VERSION-windows-x64.zip"
-          Invoke-WebRequest -Uri $url -OutFile blender.zip
+          $ver = $env:BLENDER_VERSION
+          $zipName = $env:BLENDER_ZIP
+          $base = "https://download.blender.org/release/Blender3.4"
+          Invoke-WebRequest -Uri "$base/$zipName" -OutFile blender.zip
+
+          # Blender publishes one checksum file per release (all platforms),
+          # e.g. blender-3.4.1.sha256 — not a per-asset .sha256.
+          $shaText = (Invoke-WebRequest -Uri "$base/blender-$ver.sha256" -UseBasicParsing).Content
+          $line = ($shaText -split "\r?\n") |
+            Where-Object { $_ -match [regex]::Escape($zipName) } |
+            Select-Object -First 1
+          if (-not $line) { throw "checksum entry for $zipName not found" }
+          $expected = ($line -split '\s+')[0].ToLower()
+          $actual = (Get-FileHash -Algorithm SHA256 blender.zip).Hash.ToLower()
+          if ($expected -ne $actual) { throw "Blender sha256 mismatch: $actual != $expected" }
           Expand-Archive -Path blender.zip -DestinationPath C:\blender
+
+      - name: Locate blender.exe
+        shell: pwsh
+        run: |
           $exe = Get-ChildItem -Path C:\blender -Recurse -Filter blender.exe | Select-Object -First 1
           if (-not $exe) { throw "blender.exe not found after extraction" }
           "BLENDER_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Using $($exe.FullName)"
 
-      - name: Blender background tests
+      # Install the zip the same way a user does, into a throw-away
+      # Blender profile, then verify enable -> disable -> enable.
+      - name: Install packaged zip and verify addon lifecycle
+        shell: pwsh
+        run: |
+          $zip = (Resolve-Path "dist\Blender_AutoTopo-*.zip").Path
+          if (-not $zip) { throw "addon zip not found" }
+          $env:AUTOTOPO_ZIP = $zip
+          $env:BLENDER_USER_CONFIG = Join-Path $env:RUNNER_TEMP "blender-config"
+          $env:BLENDER_USER_SCRIPTS = Join-Path $env:RUNNER_TEMP "blender-scripts"
+          & $env:BLENDER_EXE --background --factory-startup --python-exit-code 1 --python test/blender_install_smoke.py
+          if ($LASTEXITCODE -ne 0) { throw "install smoke failed (exit $LASTEXITCODE)" }
+
+      - name: Blender background test matrix
         shell: pwsh
         run: |
           $tests = @(
@@ -122,10 +291,11 @@ jobs:
           $failed = @()
           foreach ($t in $tests) {
             Write-Host "=== $t ==="
-            & $env:BLENDER_EXE --background --factory-startup --python-exit-code 1 --python $t
+            $log = "blender-" + [IO.Path]::GetFileNameWithoutExtension($t) + ".log"
+            & $env:BLENDER_EXE --background --factory-startup --python-exit-code 1 --python $t 2>&1 | Tee-Object -FilePath $log
             if ($LASTEXITCODE -ne 0) {
               Write-Host "FAILED: $t (exit $LASTEXITCODE)"
-              $failed += $t
+              $failed += "$t (exit $LASTEXITCODE)"
             }
           }
           if ($failed.Count -gt 0) {
@@ -133,3 +303,67 @@ jobs:
             exit 1
           }
           Write-Host "All Blender background tests passed."
+
+      - name: Upload Blender logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-logs
+          path: blender-*.log
+          retention-days: 7
+          if-no-files-found: warn
+
+  security:
+    name: security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: pip-audit (Python dependencies)
+        run: |
+          set -euo pipefail
+          python -m pip install -q pip-audit
+          pip-audit -r requirements-dev.txt
+
+      - name: gitleaks (secret scan)
+        run: |
+          set -euo pipefail
+          VERSION=8.30.1
+          curl -fsSLO "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          curl -fsSLO "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_checksums.txt"
+          grep "gitleaks_${VERSION}_linux_x64.tar.gz" "gitleaks_${VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "gitleaks_${VERSION}_linux_x64.tar.gz" gitleaks
+          ./gitleaks detect --source . --no-git --redact --verbose
+
+      - name: cargo audit (Rust dependencies)
+        working-directory: native/autotopo_native
+        run: |
+          set -euo pipefail
+          cargo install cargo-audit --locked
+          cargo audit
+
+  ci:
+    name: ci
+    if: always()
+    needs: [rust, python, package, blender_smoke, security]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require all jobs
+        run: |
+          set -euo pipefail
+          echo "rust=${{ needs.rust.result }}"
+          echo "python=${{ needs.python.result }}"
+          echo "package=${{ needs.package.result }}"
+          echo "blender_smoke=${{ needs.blender_smoke.result }}"
+          echo "security=${{ needs.security.result }}"
+          test "${{ needs.rust.result }}" = "success"
+          test "${{ needs.python.result }}" = "success"
+          test "${{ needs.package.result }}" = "success"
+          test "${{ needs.blender_smoke.result }}" = "success"
+          test "${{ needs.security.result }}" = "success"
