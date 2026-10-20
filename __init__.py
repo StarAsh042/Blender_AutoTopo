@@ -12,7 +12,7 @@ bl_info = {
     "author": "AutoTopo Team",
     "version": (2, 0, 0),
     "blender": (3, 4, 0),
-    "location": "View3D > Sidebar > 自动拓扑",
+    "location": "View3D > Sidebar > AutoTopo",
     "description": "Automatic retopology with silhouette preservation",
     "category": "Mesh",
 }
@@ -68,6 +68,9 @@ def _reset_runtime_state(dummy=None):
 
 def register():
     """Register the AutoTopo plugin with Blender."""
+    from .ui.i18n import register_translations
+    register_translations(__name__)
+
     # Verify dependencies are available (installed in system Python)
     try:
         import numpy  # noqa: F401
@@ -164,6 +167,9 @@ def unregister():
 
     from .utils.logger import logger
     logger.info("AutoTopo plugin unregistered")
+
+    from .ui.i18n import unregister_translations
+    unregister_translations(__name__)
 
 
 if __name__ == "__main__":

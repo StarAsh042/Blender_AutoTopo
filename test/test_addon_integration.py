@@ -34,6 +34,7 @@ def _run():
 
     import bpy
     import importlib
+    from Blender_AutoTopo.ui.i18n import t
 
     # ── 1. Register the addon ──
     mod = importlib.import_module('Blender_AutoTopo')
@@ -90,7 +91,7 @@ def _run():
           f"({n_quads / max(n_total, 1) * 100:.1f}%) ===")
     print("result info:")
     print(props.last_result_info)
-    assert props.status_message == "完成!", f"status: {props.status_message}"
+    assert props.status_message == t("Done!"), f"status: {props.status_message}"
 
     mod.unregister()
     print("=== ALL INTEGRATION TESTS PASSED ===")

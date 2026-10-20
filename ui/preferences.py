@@ -12,27 +12,31 @@ import bpy
 from bpy.types import AddonPreferences
 from bpy.props import StringProperty
 
+from .i18n import t
+
 
 class AUTOTOPO_Preferences(AddonPreferences):
     bl_idname = "Blender_AutoTopo"
 
     autoremesher_path: StringProperty(
-        name="AutoRemesher 可执行文件",
+        name="AutoRemesher Executable",
         description=(
-            "可选：AutoRemesher 可执行文件的绝对路径。仅当该路径位于插件内置的 "
-            "bin/autoremesher/ 目录内且通过完整性校验时才会被采用；其他路径"
-            "一律忽略并使用内置二进制。"
+            "Optional: absolute path to the AutoRemesher executable. The path "
+            "is honored only when it lies inside the addon's bin/autoremesher/ "
+            "directory and passes integrity verification; any other path is "
+            "ignored and the bundled binary is used."
         ),
         subtype='FILE_PATH',
         default="",
     )
 
     quadriflow_path: StringProperty(
-        name="QuadriFlow 可执行文件",
+        name="QuadriFlow Executable",
         description=(
-            "可选：QuadriFlow 可执行文件的绝对路径。仅当该路径位于插件内置的 "
-            "bin/quadriflow/ 目录内且通过完整性校验时才会被采用；其他路径"
-            "一律忽略并使用内置二进制。"
+            "Optional: absolute path to the QuadriFlow executable. The path "
+            "is honored only when it lies inside the addon's bin/quadriflow/ "
+            "directory and passes integrity verification; any other path is "
+            "ignored and the bundled binary is used."
         ),
         subtype='FILE_PATH',
         default="",
@@ -41,7 +45,7 @@ class AUTOTOPO_Preferences(AddonPreferences):
     def draw(self, context):
         layout = self.layout
         layout.label(
-            text="外部引擎路径（可选；仅内置目录 bin/<engine>/ 受信任）",
+            text=t("External engine paths (optional; only bin/<engine>/ is trusted)"),
             icon='PREFERENCES',
         )
         layout.prop(self, "autoremesher_path")

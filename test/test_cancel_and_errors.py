@@ -86,19 +86,38 @@ def subtest_poll_without_mesh(bpy):
 # ── (c) error-message mapping + engine-level missing-lib graceful failure ──
 def subtest_error_mapping(bpy):
     from Blender_AutoTopo.ui.operators import _to_friendly_error
+    from Blender_AutoTopo.ui.i18n import t
 
+    # The raw strings mirror engine-internal exceptions and stay Chinese
+    # (they are not translated); the expected messages go through t() so
+    # the assertions are language-independent.
     cases = [
         ("QuadWild 引擎库缺失：请将 lib_quadwild.dll 与 lib_quadpatches.dll 放入",
-         "QuadWild"),
-        ("未找到 AutoRemesher。请下载 autoremesher 可执行文件", "可执行"),
-        ("无效的网格数据", "网格"),
-        ("未知引擎 'nope'", "未知算法引擎"),
-        ("输出网格为空", "未生成有效输出"),
-        ("用户取消", "取消"),
+         t("QuadWild libraries are missing: make sure lib_quadwild.dll and "
+           "lib_quadpatches.dll are in the addon's bin/quadwild directory, "
+           "then restart Blender and try again.")),
+        ("未找到 AutoRemesher。请下载 autoremesher 可执行文件",
+         t("External executable not found: make sure the engine is bundled "
+           "or set the correct executable path in the addon preferences, "
+           "then try again.")),
+        ("无效的网格数据",
+         t("Invalid mesh data: make sure the selected object is a valid mesh "
+           "(check it in Edit Mode and remove zero-area faces), then try "
+           "again.")),
+        ("未知引擎 'nope'",
+         t("Unknown algorithm engine: select an engine again in the panel "
+           "and retry.")),
+        ("输出网格为空",
+         t("The engine produced no valid output: try lowering the target "
+           "face count, disabling adaptive density, or relaxing the "
+           "tolerance, then retry.")),
+        ("用户取消",
+         t("Cancelled: the retopology job was aborted. Adjust the parameters "
+           "and try again.")),
     ]
-    for raw, needle in cases:
+    for raw, expected in cases:
         msg = _to_friendly_error(raw)
-        assert needle in msg, f"{raw!r} -> {msg!r} (missing {needle!r})"
+        assert msg == expected, f"{raw!r} -> {msg!r} != {expected!r}"
     print("(c) friendly-error mapping OK")
 
 
@@ -133,16 +152,19 @@ def subtest_missing_lib_graceful(bpy):
 def subtest_empty_output(bpy):
     from Blender_AutoTopo.engines.evaluation import RetopoResult
     from Blender_AutoTopo.ui import operators as ops_mod
+    from Blender_AutoTopo.ui.i18n import t
 
     props = bpy.context.scene.auto_topo
     props.is_processing = True
 
-    # success=True but no output mesh -> "引擎完成但未生成输出网格"
+    # success=True but no output mesh -> "engine finished without output"
     res = RetopoResult()
     res.success = True
     res.output_mesh = None
     ops_mod._handle_pipeline_done(res)
-    assert "未生成输出" in props.status_message, props.status_message
+    assert props.status_message == t(
+        "Error: the engine finished but produced no output mesh"), \
+        props.status_message
     assert props.is_processing is False
 
     # engine reported an empty-output error -> friendly "未生成有效输出"
@@ -151,13 +173,17 @@ def subtest_empty_output(bpy):
     res2.success = False
     res2.error_message = "四边面过少"
     ops_mod._handle_pipeline_done(res2)
-    assert "未生成有效输出" in props.status_message, props.status_message
+    assert props.status_message == t(
+        "The engine produced no valid output: try lowering the target face "
+        "count, disabling adaptive density, or relaxing the tolerance, then "
+        "retry."), props.status_message
     print("(d) empty output branch OK")
 
 
 # ── (a) cancel after start ──
 def subtest_cancel(bpy):
     from Blender_AutoTopo.ui import operators as ops_mod
+    from Blender_AutoTopo.ui.i18n import t
 
     props = bpy.context.scene.auto_topo
     _make_cube(bpy)
@@ -173,12 +199,12 @@ def subtest_cancel(bpy):
 
     _pump_until_done(ops_mod, props)
     assert props.is_processing is False
-    assert "取消" in props.status_message, props.status_message
+    assert props.status_message == t("Cancelled"), props.status_message
 
     retopo = [o for o in bpy.data.objects if o.name.endswith("_retopo")]
     assert retopo == [], f"cancelled run left output: {[o.name for o in retopo]}"
     assert ops_mod._cancel_requested is False
-    print("(a) cancel -> is_processing False, 取消 status, no *_retopo OK")
+    print("(a) cancel -> is_processing False, Cancelled status, no *_retopo OK")
 
 
 # ── (e) unregister guard + no residual timer ──
