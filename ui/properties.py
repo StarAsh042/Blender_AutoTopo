@@ -32,18 +32,19 @@ class AutoTopoProperties(PropertyGroup):
     # === 引擎选择 ===
 
     engine: EnumProperty(
-        name="引擎",
-        description="拓扑重建算法引擎",
+        name="Algorithm Engine",
+        description="Retopology algorithm engine",
         items=[
-            ('autoremesher', "AutoRemesher 快速四边面",
-             "AutoRemesher (MIT)：各向同性重网格 + 参数化 + 四边面提取，"
-             "四边面比例极高、速度快"),
-            ('quadriflow', "QuadriFlow 场对齐",
-             "QuadriFlow (MIT, SIGGRAPH 2020)：方向场对齐 + 全局参数化，"
-             "布线均匀、可扩展到高面数"),
-            ('quadwild', "QuadWild 高质量",
-             "QuadWild (SIGGRAPH Asia 2019)：交叉场量化 + ILP 最终四边面化，"
-             "内部四边面干净、奇点处带少量过渡三角面"),
+            ('autoremesher', "AutoRemesher (fast quad)",
+             "AutoRemesher (MIT): isotropic remeshing + parameterization + "
+             "quad extraction; very high quad ratio and fast"),
+            ('quadriflow', "QuadriFlow (field-aligned)",
+             "QuadriFlow (MIT, SIGGRAPH 2020): direction-field alignment + "
+             "global parameterization; even layout, scales to high face counts"),
+            ('quadwild', "QuadWild (high quality)",
+             "QuadWild (SIGGRAPH Asia 2019): cross-field quantization + ILP "
+             "final quadrangulation; clean interior quads, a few transition "
+             "triangles at singularities"),
         ],
         default='autoremesher',
     )
@@ -51,8 +52,8 @@ class AutoTopoProperties(PropertyGroup):
     # === 共享基础参数（非引擎独占） ===
 
     target_face_count: IntProperty(
-        name="目标面数",
-        description="输出网格的目标面数",
+        name="Target Face Count",
+        description="Target number of faces in the output mesh",
         default=2000,
         min=100,
         max=100000,
@@ -61,9 +62,10 @@ class AutoTopoProperties(PropertyGroup):
     )
 
     sharp_angle_threshold: FloatProperty(
-        name="锐边角度",
-        description="边的内二面角小于该值时视为锐边"
-                    "（平坦=180，直角=90；值越大保留的锐边越多），单位：度",
+        name="Sharp Edge Angle",
+        description="Edges whose interior dihedral angle is below this value "
+                    "are treated as sharp (flat = 180, right angle = 90; larger "
+                    "values preserve more sharp edges). Unit: degrees",
         default=90.0,
         min=10.0,
         max=180.0,
@@ -73,22 +75,22 @@ class AutoTopoProperties(PropertyGroup):
     # === 内部状态（只读展示，不暴露给用户编辑） ===
 
     is_processing: BoolProperty(
-        name="处理中",
-        description="是否正在执行拓扑重建",
+        name="Processing",
+        description="Whether retopology is currently running",
         default=False,
     )
 
     status_message: StringProperty(
-        name="状态",
-        description="当前状态信息",
+        name="Status",
+        description="Current status message",
         default="",
     )
 
     # NOTE: 内部状态，仅供面板只读展示（panels.py 用 layout.progress()
     # 渲染，不用 box.prop()），用户不可编辑/拖动。
     progress: FloatProperty(
-        name="进度",
-        description="当前处理进度（只读显示）",
+        name="Progress",
+        description="Current progress (read-only)",
         default=0.0,
         min=0.0,
         max=100.0,
@@ -96,14 +98,14 @@ class AutoTopoProperties(PropertyGroup):
     )
 
     step_name: StringProperty(
-        name="当前步骤",
-        description="当前正在执行的步骤名称",
+        name="Current Step",
+        description="Name of the step currently running",
         default="",
     )
 
     last_result_info: StringProperty(
-        name="上次结果",
-        description="上次拓扑重建的结果信息",
+        name="Last Result",
+        description="Result information from the last retopology run",
         default="",
     )
 

@@ -5,60 +5,66 @@ registry and draws whatever :class:`SettingSpec` that engine declares —
 plus the shared ``target_face_count`` and (when the engine opts in via
 ``shared_props``) ``sharp_angle_threshold``. No per-engine branching, so
 adding an engine needs no panel changes.
+
+All runtime text goes through :func:`ui.i18n.t`; ``bl_label`` and
+``bl_category`` stay static because Blender translates them through the
+``"*"`` context while drawing.
 """
 
 import bpy
 from bpy.types import Panel
 
 from ..engines.base import get_engine
+from .i18n import t
 
 
-# Blender < 4.0 没有 layout.progress()，回退用的文本进度条宽度
+# Blender < 4.0 has no layout.progress(); fallback text bar width.
 _PROGRESS_BAR_WIDTH = 20
 
 
 def _draw_progress(layout, props):
-    """只读进度显示（用户无法拖动）。
+    """Read-only progress display (the user cannot drag it).
 
-    Blender 4.0+ 提供 layout.progress()；3.4 没有该 API，退回纯展示的
-    文本进度条。两条路径都不使用可编辑的 box.prop()——旧实现会把
-    FloatProperty 渲染成可拖动的滑块。
+    Blender 4.0+ provides ``layout.progress()``; 3.4 has no such API and
+    falls back to a text bar. Neither path uses an editable
+    ``box.prop()`` — the old implementation rendered a FloatProperty as
+    a draggable slider.
     """
     factor = max(0.0, min(props.progress, 100.0)) / 100.0
     pct = props.progress
 
     progress_fn = getattr(layout, "progress", None)
     if callable(progress_fn):
-        progress_fn(factor=factor, text=f"进度 {pct:.0f}%")
+        progress_fn(factor=factor, text=t("Progress {pct:.0f}%", pct=pct))
         return
 
     filled = int(round(factor * _PROGRESS_BAR_WIDTH))
     bar = "█" * filled + "░" * (_PROGRESS_BAR_WIDTH - filled)
-    layout.label(text=f"进度 [{bar}] {pct:.0f}%")
+    layout.label(text=t("Progress [{bar}] {pct:.0f}%", bar=bar, pct=pct))
 
 
 class AUTOTOPO_PT_MainPanel(Panel):
-    """AutoTopo 主面板 - 3D 视图侧边栏。"""
+    """AutoTopo main panel - 3D View sidebar."""
 
-    bl_label = "自动拓扑"
+    bl_label = "AutoTopo"
     bl_idname = "AUTOTOPO_PT_MainPanel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "自动拓扑"
+    bl_category = "AutoTopo"
 
     def draw(self, context):
         layout = self.layout
         props = context.scene.auto_topo
 
-        # === 引擎选择 ===
+        # === Engine selection ===
         box = layout.box()
-        box.label(text="算法引擎", icon='PREFERENCES')
+        box.label(text=t("Algorithm Engine"), icon='PREFERENCES')
         box.prop(props, "engine", text="")
 
         engine_cls = get_engine(props.engine)
         if engine_cls is None:
             box = layout.box()
-            box.label(text="未知引擎，请重新选择", icon='ERROR')
+            box.label(text=t("Unknown engine. Select it again."), icon='ERROR')
             layout.separator()
             row = layout.row()
             row.scale_y = 2.0
@@ -68,37 +74,37 @@ class AUTOTOPO_PT_MainPanel(Panel):
 
         if not engine_cls.is_available():
             box = layout.box()
-            box.label(text="引擎暂不可用", icon='ERROR')
-            box.label(text=engine_cls.unavailable_hint())
+            box.label(text=t("Engine unavailable"), icon='ERROR')
+            box.label(text=t(engine_cls.unavailable_hint()))
 
-        # === 共享面数控制 ===
+        # === Shared face-count control ===
         box = layout.box()
-        box.label(text="面数控制", icon='MESH_DATA')
+        box.label(text=t("Face Count"), icon='MESH_DATA')
         col = box.column(align=True)
         col.prop(props, "target_face_count")
 
-        # 快捷面数按钮
+        # Quick face-count buttons
         row = box.row(align=True)
-        op = row.operator("autotopo.set_face_count", text="低")
+        op = row.operator("autotopo.set_face_count", text=t("Low"))
         op.count = 500
-        op = row.operator("autotopo.set_face_count", text="中")
+        op = row.operator("autotopo.set_face_count", text=t("Medium"))
         op.count = 2000
-        op = row.operator("autotopo.set_face_count", text="高")
+        op = row.operator("autotopo.set_face_count", text=t("High"))
         op.count = 8000
 
-        # === 共享特征参数（引擎自选） ===
+        # === Shared feature parameters (engine opt-in) ===
         shared = [k for k in getattr(engine_cls, "shared_props", ())
                   if hasattr(props, k)]
         if shared:
             box = layout.box()
-            box.label(text="特征保留", icon='MOD_DECIM')
+            box.label(text=t("Feature Preservation"), icon='MOD_DECIM')
             for key in shared:
                 box.prop(props, key)
 
-        # === 引擎专属参数（基础 + 高级折叠） ===
+        # === Engine-specific settings (basic + collapsible advanced) ===
         self._draw_engine_settings(layout, props, engine_cls)
 
-        # === 执行按钮 ===
+        # === Run button ===
         layout.separator()
         row = layout.row()
         row.scale_y = 2.0
@@ -114,7 +120,7 @@ class AUTOTOPO_PT_MainPanel(Panel):
 
         if basic:
             box = layout.box()
-            box.label(text="参数", icon='MODIFIER')
+            box.label(text=t("Parameters"), icon='MODIFIER')
             col = box.column(align=True)
             for spec in basic:
                 if spec.show_if and not spec.show_if(props):
@@ -123,7 +129,7 @@ class AUTOTOPO_PT_MainPanel(Panel):
 
         if advanced:
             box = layout.box()
-            box.label(text="高级参数", icon='SETTINGS')
+            box.label(text=t("Advanced"), icon='SETTINGS')
             col = box.column(align=True)
             for spec in advanced:
                 if spec.show_if and not spec.show_if(props):
@@ -132,18 +138,19 @@ class AUTOTOPO_PT_MainPanel(Panel):
 
     @staticmethod
     def _draw_status(layout, props):
-        """进度/状态/结果信息区域。"""
-        # === 进度显示 ===
+        """Progress / status / result area."""
+        # === Progress ===
         if props.is_processing:
             box = layout.box()
-            box.label(text=f"步骤: {props.step_name}", icon='TIME')
-            # 只读进度：4.0+ 用 layout.progress()，3.4 退回文本进度条。
+            box.label(text=t("Step: {step}", step=props.step_name), icon='TIME')
+            # Read-only progress: 4.0+ uses layout.progress(), 3.4 falls
+            # back to a text bar.
             _draw_progress(box, props)
             row = box.row()
             row.scale_y = 1.5
-            row.operator("autotopo.cancel", icon='PANEL_CLOSE', text="取消")
+            row.operator("autotopo.cancel", icon='PANEL_CLOSE', text=t("Cancel"))
 
-        # === 状态 ===
+        # === Status ===
         if props.status_message:
             box = layout.box()
             box.label(text=props.status_message, icon='INFO')

@@ -238,8 +238,8 @@ class AutoRemesherEngine(RemeshEngine):
 
     @staticmethod
     def unavailable_hint() -> str:
-        return ("未找到 AutoRemesher。请将 autoremesher.exe 放入插件内置的 "
-                "bin/autoremesher/ 目录后重试。")
+        return ("AutoRemesher not found. Place autoremesher.exe in the addon's "
+                "bin/autoremesher/ directory and try again.")
 
     # ------------------------------------------------------------------
     # execution

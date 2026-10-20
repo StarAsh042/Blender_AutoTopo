@@ -197,8 +197,8 @@ class QuadriFlowEngine(RemeshEngine):
 
     @staticmethod
     def unavailable_hint() -> str:
-        return ("未找到 QuadriFlow。请将 quadriflow.exe 放入插件内置的 "
-                "bin/quadriflow/ 目录后重试。")
+        return ("QuadriFlow not found. Place quadriflow.exe in the addon's "
+                "bin/quadriflow/ directory and try again.")
 
     # ------------------------------------------------------------------
     # execution

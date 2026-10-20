@@ -1091,9 +1091,10 @@ class QuadWildEngine(RemeshEngine):
 
     @staticmethod
     def unavailable_hint() -> str:
-        return ("未找到 QuadWild 算法库：请将 lib_quadwild.dll 与 "
-                "lib_quadpatches.dll 放入插件的 bin/quadwild 目录"
-                "（当前发行版仅含 Windows 二进制），然后重启 Blender 重试。")
+        return ("QuadWild libraries not found. Place lib_quadwild.dll and "
+                "lib_quadpatches.dll in the addon's bin/quadwild/ directory "
+                "(the current release ships Windows binaries only), then "
+                "restart Blender and try again.")
 
     # ------------------------------------------------------------------
     # execution
