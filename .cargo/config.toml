@@ -1,0 +1,6 @@
+# Static CRT for the Windows MSVC target: the shipped DLL must stay
+# self-contained, matching the previous MinGW build (which linked
+# libgcc/libstdc++ statically). Only raw buffers cross the FFI
+# boundary — no CRT state is shared with the host process.
+[build]
+rustflags = ["-C", "target-feature=+crt-static"]

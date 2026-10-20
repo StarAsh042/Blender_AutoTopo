@@ -1,0 +1,22 @@
+[package]
+name = "autotopo_native"
+version = "2.0.0"
+edition = "2021"
+rust-version = "1.99"
+description = "Native acceleration core (Rust) for the Blender AutoTopo addon"
+license = "MIT"
+repository = "https://github.com/StarAsh042/Blender_AutoTopo"
+readme = "README.md"
+
+# cdylib only: the artifact is loaded through ctypes
+# (utils/native.py), never linked into a Rust binary.
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+# The hot paths are pure scalar double math; opt-level 2 matches the
+# previous MinGW -O2 build. LTO keeps the two kernels tight.
+opt-level = 2
+lto = true
+codegen-units = 1
+panic = "unwind" # FFI boundary uses catch_unwind; abort would defeat it
