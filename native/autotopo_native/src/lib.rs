@@ -146,9 +146,186 @@ fn sharp_features_impl(
     if n_verts >= (1i64 << 32) {
         return -4;
     }
-    // Skeleton: the kernel lands in the next commit. Any negative code
-    // means "unavailable" to callers, which fall back to numpy.
-    -5
+
+    // SAFETY: all pointers were validated non-null above and every
+    // length is positive; the caller guarantees the buffers hold
+    // n_verts*3 / n_faces*3 / n_sharp*2 elements and that the outputs
+    // have capacity >= n_sharp (see the ABI contract above).
+    unsafe {
+        sharp_features_kernel(
+            verts,
+            n_verts,
+            faces,
+            n_faces,
+            sharp_keys,
+            n_sharp,
+            out_convexity,
+            out_face_index,
+            out_edge_pos,
+        )
+    }
+}
+
+/// Per-edge incidence slot. Only the first two incident half-edges are
+/// kept, mirroring the C++ implementation (and the Python original,
+/// which reads `locs[0]` / `locs[1]` and only checks whether a second
+/// one exists).
+#[derive(Clone, Copy, Default)]
+struct EdgeSlot {
+    fi0: i64,
+    fi1: i64,
+    j0: i32,
+    j1: i32,
+    count: u8,
+}
+
+/// The sharp-feature kernel. Inputs must have been validated by
+/// `sharp_features_impl`; this function is `unsafe` because it
+/// dereferences the raw ABI buffers.
+#[allow(clippy::too_many_arguments)]
+unsafe fn sharp_features_kernel(
+    verts: *const f64,
+    n_verts: i64,
+    faces: *const i64,
+    n_faces: i64,
+    sharp_keys: *const i64,
+    n_sharp: i64,
+    out_convexity: *mut i32,
+    out_face_index: *mut i64,
+    out_edge_pos: *mut i64,
+) -> i64 {
+    use std::collections::hash_map::Entry;
+    use std::collections::HashMap;
+
+    // Degenerate-face normal clamp, matching the C++ kNormEps.
+    const NORM_EPS: f64 = 1e-12;
+
+    let nf = n_faces as usize;
+    let verts = std::slice::from_raw_parts(verts, n_verts as usize * 3);
+    let faces = std::slice::from_raw_parts(faces, nf * 3);
+
+    // Per-face unit normals (matches compute_face_normals) and
+    // centroids (matches verts[faces].mean(axis=1)). try_reserve keeps
+    // the documented -5 contract on allocation failure (the C++ side
+    // caught std::bad_alloc).
+    let mut fnorm: Vec<f64> = Vec::new();
+    let mut cen: Vec<f64> = Vec::new();
+    if fnorm.try_reserve_exact(nf * 3).is_err() || cen.try_reserve_exact(nf * 3).is_err() {
+        return -5;
+    }
+    fnorm.resize(nf * 3, 0.0);
+    cen.resize(nf * 3, 0.0);
+
+    for m in 0..nf {
+        let i0 = faces[m * 3];
+        let i1 = faces[m * 3 + 1];
+        let i2 = faces[m * 3 + 2];
+        if i0 < 0 || i1 < 0 || i2 < 0 || i0 >= n_verts || i1 >= n_verts || i2 >= n_verts {
+            return -3;
+        }
+        let (i0, i1, i2) = (i0 as usize, i1 as usize, i2 as usize);
+        let v0 = &verts[i0 * 3..i0 * 3 + 3];
+        let v1 = &verts[i1 * 3..i1 * 3 + 3];
+        let v2 = &verts[i2 * 3..i2 * 3 + 3];
+        let e1x = v1[0] - v0[0];
+        let e1y = v1[1] - v0[1];
+        let e1z = v1[2] - v0[2];
+        let e2x = v2[0] - v0[0];
+        let e2y = v2[1] - v0[1];
+        let e2z = v2[2] - v0[2];
+        let nx = e1y * e2z - e1z * e2y;
+        let ny = e1z * e2x - e1x * e2z;
+        let nz = e1x * e2y - e1y * e2x;
+        let mut nrm = (nx * nx + ny * ny + nz * nz).sqrt();
+        if nrm < NORM_EPS {
+            nrm = NORM_EPS;
+        }
+        fnorm[m * 3] = nx / nrm;
+        fnorm[m * 3 + 1] = ny / nrm;
+        fnorm[m * 3 + 2] = nz / nrm;
+        cen[m * 3] = (v0[0] + v1[0] + v2[0]) / 3.0;
+        cen[m * 3 + 1] = (v0[1] + v1[1] + v2[1]) / 3.0;
+        cen[m * 3 + 2] = (v0[2] + v1[2] + v2[2]) / 3.0;
+    }
+
+    // edge -> first two incident half-edges, in (face, j) order.
+    let mut incidence: HashMap<u64, EdgeSlot> = HashMap::new();
+    if incidence.try_reserve(nf * 3).is_err() {
+        return -5;
+    }
+    for m in 0..nf {
+        for j in 0..3usize {
+            let a = faces[m * 3 + j];
+            let b = faces[m * 3 + (j + 1) % 3];
+            let (u, v) = if a < b { (a, b) } else { (b, a) };
+            let key = ((u as u64) << 32) | v as u64;
+            match incidence.entry(key) {
+                Entry::Occupied(mut e) => {
+                    let slot = e.get_mut();
+                    if slot.count == 1 {
+                        slot.fi1 = m as i64;
+                        slot.j1 = j as i32;
+                        slot.count = 2;
+                    }
+                }
+                Entry::Vacant(e) => {
+                    e.insert(EdgeSlot {
+                        fi0: m as i64,
+                        fi1: -1,
+                        j0: j as i32,
+                        j1: 0,
+                        count: 1,
+                    });
+                }
+            }
+        }
+    }
+
+    let keys: &[i64] = if n_sharp > 0 {
+        std::slice::from_raw_parts(sharp_keys, n_sharp as usize * 2)
+    } else {
+        &[]
+    };
+
+    let mut out: i64 = 0;
+    for k in 0..n_sharp as usize {
+        let mut u = keys[k * 2];
+        let mut v = keys[k * 2 + 1];
+        if u < 0 || v < 0 {
+            continue;
+        }
+        if u > v {
+            std::mem::swap(&mut u, &mut v);
+        }
+        let key = ((u as u64) << 32) | v as u64;
+        let slot = match incidence.get(&key) {
+            Some(s) => s,
+            None => continue,
+        };
+        let fi = slot.fi0;
+        let j = slot.j0;
+        let convexity: i32 = if slot.count < 2 {
+            1 // boundary edge: treat as convex
+        } else {
+            let a = faces[fi as usize * 3 + j as usize] as usize;
+            let dx = cen[slot.fi1 as usize * 3] - verts[a * 3];
+            let dy = cen[slot.fi1 as usize * 3 + 1] - verts[a * 3 + 1];
+            let dz = cen[slot.fi1 as usize * 3 + 2] - verts[a * 3 + 2];
+            let signed_v = fnorm[fi as usize * 3] * dx
+                + fnorm[fi as usize * 3 + 1] * dy
+                + fnorm[fi as usize * 3 + 2] * dz;
+            if signed_v < 0.0 {
+                1
+            } else {
+                0
+            }
+        };
+        *out_convexity.add(out as usize) = convexity;
+        *out_face_index.add(out as usize) = fi;
+        *out_edge_pos.add(out as usize) = j as i64;
+        out += 1;
+    }
+    out
 }
 
 // ── 2. Directed Hausdorff distance (max nearest-neighbour) ──
@@ -359,5 +536,165 @@ mod tests {
         );
         std::panic::set_hook(previous);
         assert_eq!(code, -5);
+    }
+
+    // ── sharp_features kernel tests ──
+
+    /// Two triangles forming a planar quad (deterministic fixture).
+    fn quad_mesh() -> (Vec<f64>, Vec<i64>) {
+        let verts = vec![
+            0.0, 0.0, 0.0, // 0
+            1.0, 0.0, 0.0, // 1
+            1.0, 1.0, 0.0, // 2
+            0.0, 1.0, 0.0, // 3
+        ];
+        let faces = vec![0i64, 1, 2, 0, 2, 3];
+        (verts, faces)
+    }
+
+    /// Naive O(F) per key reference: independent re-derivation of the
+    /// documented behavior (incidence selection + convexity rule).
+    /// The normal formula is deliberately duplicated rather than shared
+    /// with the kernel, so a typo on either side fails the comparison.
+    fn naive_sharp(verts: &[f64], faces: &[i64], keys: &[i64]) -> Vec<(i32, i64, i64)> {
+        let nf = faces.len() / 3;
+        let mut out = Vec::new();
+        for k in 0..keys.len() / 2 {
+            let (mut u, mut v) = (keys[k * 2], keys[k * 2 + 1]);
+            if u < 0 || v < 0 {
+                continue;
+            }
+            if u > v {
+                std::mem::swap(&mut u, &mut v);
+            }
+            let mut first: Option<(usize, usize)> = None;
+            let mut second: Option<(usize, usize)> = None;
+            for m in 0..nf {
+                for j in 0..3 {
+                    let a = faces[m * 3 + j];
+                    let b = faces[m * 3 + (j + 1) % 3];
+                    let (eu, ev) = if a < b { (a, b) } else { (b, a) };
+                    if eu == u && ev == v {
+                        if first.is_none() {
+                            first = Some((m, j));
+                        } else if second.is_none() {
+                            second = Some((m, j));
+                        }
+                    }
+                }
+            }
+            let (fi, j) = match first {
+                Some(x) => x,
+                None => continue,
+            };
+            let convexity = match second {
+                None => 1,
+                Some((fi1, _)) => {
+                    let tri = |m: usize| -> (&[f64], &[f64], &[f64]) {
+                        (
+                            &verts[faces[m * 3] as usize * 3..],
+                            &verts[faces[m * 3 + 1] as usize * 3..],
+                            &verts[faces[m * 3 + 2] as usize * 3..],
+                        )
+                    };
+                    let (v0, v1, v2) = tri(fi);
+                    let e1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
+                    let e2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
+                    let n = [
+                        e1[1] * e2[2] - e1[2] * e2[1],
+                        e1[2] * e2[0] - e1[0] * e2[2],
+                        e1[0] * e2[1] - e1[1] * e2[0],
+                    ];
+                    let (c0, c1, c2) = tri(fi1);
+                    let cen = [
+                        (c0[0] + c1[0] + c2[0]) / 3.0,
+                        (c0[1] + c1[1] + c2[1]) / 3.0,
+                        (c0[2] + c1[2] + c2[2]) / 3.0,
+                    ];
+                    let a = faces[fi * 3 + j] as usize;
+                    let d = [
+                        cen[0] - verts[a * 3],
+                        cen[1] - verts[a * 3 + 1],
+                        cen[2] - verts[a * 3 + 2],
+                    ];
+                    let signed_v = n[0] * d[0] + n[1] * d[1] + n[2] * d[2];
+                    if signed_v < 0.0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
+            };
+            out.push((convexity, fi as i64, j as i64));
+        }
+        out
+    }
+
+    #[test]
+    fn sharp_features_matches_naive_reference() {
+        let (verts, faces) = quad_mesh();
+        // interior edge (0,2); boundary edge (0,1); absent edge (1,3);
+        // reversed order (2,0); duplicate (0,2); negative pair (-1,2).
+        let keys: Vec<i64> = vec![0, 2, 0, 1, 1, 3, 2, 0, 0, 2, -1, 2];
+        let n_keys = keys.len() / 2;
+        let mut conv = vec![0i32; n_keys];
+        let mut fi = vec![0i64; n_keys];
+        let mut pos = vec![0i64; n_keys];
+        let n = autotopo_sharp_features(
+            verts.as_ptr(),
+            verts.len() as i64 / 3,
+            faces.as_ptr(),
+            faces.len() as i64 / 3,
+            keys.as_ptr(),
+            keys.len() as i64 / 2,
+            conv.as_mut_ptr(),
+            fi.as_mut_ptr(),
+            pos.as_mut_ptr(),
+        );
+        assert!(n >= 0, "unexpected error code {n}");
+        let got: Vec<(i32, i64, i64)> = (0..n as usize).map(|i| (conv[i], fi[i], pos[i])).collect();
+        assert_eq!(got, naive_sharp(&verts, &faces, &keys));
+        // Hand-computed expectations for the planar quad:
+        // (0,2) interior -> convexity 0 (face 0, position 2);
+        // (0,1) boundary -> convexity 1 (face 0, position 0);
+        // (2,0) normalizes to (0,2); duplicate (0,2) repeats it.
+        assert_eq!(got, vec![(0, 0, 2), (1, 0, 0), (0, 0, 2), (0, 0, 2)]);
+    }
+
+    #[test]
+    fn sharp_features_handles_degenerate_face() {
+        // Second face is zero-area: its normal is clamped, and its
+        // self-loop edges must not panic or produce NaN.
+        let verts: [f64; 12] = [
+            0.0, 0.0, 0.0, // 0
+            1.0, 0.0, 0.0, // 1
+            1.0, 1.0, 0.0, // 2
+            0.5, 0.5, 0.5, // 3
+        ];
+        let faces: [i64; 6] = [0, 1, 2, 3, 3, 3];
+        let keys: [i64; 4] = [0, 1, 3, 3];
+        let n_keys = keys.len() / 2;
+        let mut conv = vec![0i32; n_keys];
+        let mut fi = vec![0i64; n_keys];
+        let mut pos = vec![0i64; n_keys];
+        let n = autotopo_sharp_features(
+            verts.as_ptr(),
+            verts.len() as i64 / 3,
+            faces.as_ptr(),
+            faces.len() as i64 / 3,
+            keys.as_ptr(),
+            keys.len() as i64 / 2,
+            conv.as_mut_ptr(),
+            fi.as_mut_ptr(),
+            pos.as_mut_ptr(),
+        );
+        assert!(n >= 0, "unexpected error code {n}");
+        let got: Vec<(i32, i64, i64)> = (0..n as usize).map(|i| (conv[i], fi[i], pos[i])).collect();
+        // (0,1): single incident face -> boundary -> convex, face 0, j 0.
+        // (3,3): the degenerate face's self-loop edge is hit at both
+        // j = 0 and j = 1, so it has TWO incident half-edges and the
+        // signed-volume branch runs: centroid == vertex -> signed_v
+        // == 0 -> concave (0), face 1, j 0.
+        assert_eq!(got, vec![(1, 0, 0), (0, 1, 0)]);
     }
 }
