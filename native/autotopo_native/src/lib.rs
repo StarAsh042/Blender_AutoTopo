@@ -372,8 +372,118 @@ fn max_nearest_distance_impl(query: *const f64, n_query: i64, ref_: *const f64, 
     if query.is_null() || ref_.is_null() {
         return -1.0;
     }
-    // Skeleton: the kernel lands in a follow-up commit.
-    -3.0
+
+    // SAFETY: pointers validated non-null above, counts positive; the
+    // caller guarantees n_query*3 / n_ref*3 readable doubles.
+    unsafe { max_nearest_distance_kernel(query, n_query, ref_, n_ref) }
+}
+
+/// kd-tree node over a 3-D point cloud (median split, 3 axes).
+struct KdNode {
+    point: i64, // index into the reference array
+    left: i32,  // child node index or -1
+    right: i32, // child node index or -1
+    axis: i32,  // splitting axis of this node
+}
+
+/// Median-split build over `idx[lo..hi)`, mirroring the C++
+/// `std::nth_element` partition. The resulting tree shape may differ
+/// from the C++ build for equal axis coordinates, but nearest-neighbour
+/// queries are exact (the minimum does not depend on traversal order),
+/// so the returned distance is bit-identical.
+unsafe fn kd_build(
+    lo: i64,
+    hi: i64,
+    axis: i32,
+    idx: &mut [i64],
+    pts: &[f64],
+    nodes: &mut Vec<KdNode>,
+) -> i32 {
+    if lo >= hi {
+        return -1;
+    }
+    let mid = lo + (hi - lo) / 2;
+    let (lo_u, hi_u) = (lo as usize, hi as usize);
+    idx[lo_u..hi_u].select_nth_unstable_by((mid as usize) - lo_u, |a, b| {
+        // NaN coordinates compare as Equal (defined behavior; the C++
+        // side left this unspecified). Inputs with NaN never reach the
+        // shipped golden fixtures.
+        pts[*a as usize * 3 + axis as usize]
+            .partial_cmp(&pts[*b as usize * 3 + axis as usize])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let node = nodes.len() as i32;
+    nodes.push(KdNode {
+        point: idx[mid as usize],
+        left: -1,
+        right: -1,
+        axis,
+    });
+    let l = kd_build(lo, mid, (axis + 1) % 3, idx, pts, nodes);
+    let r = kd_build(mid + 1, hi, (axis + 1) % 3, idx, pts, nodes);
+    nodes[node as usize].left = l;
+    nodes[node as usize].right = r;
+    node
+}
+
+/// Exact nearest-neighbour search for `q`, updating `best2` (squared
+/// distance) in place. Mirrors the C++ traversal: near child first,
+/// far child only when the splitting-plane distance can still beat
+/// `best2`.
+unsafe fn kd_nearest(node: i32, q: &[f64], pts: &[f64], nodes: &[KdNode], best2: &mut f64) {
+    if node < 0 {
+        return;
+    }
+    let nd = &nodes[node as usize];
+    let p = &pts[nd.point as usize * 3..nd.point as usize * 3 + 3];
+    let dx = q[0] - p[0];
+    let dy = q[1] - p[1];
+    let dz = q[2] - p[2];
+    let d2 = dx * dx + dy * dy + dz * dz;
+    if d2 < *best2 {
+        *best2 = d2;
+    }
+    let axis = nd.axis as usize;
+    let delta = q[axis] - p[axis];
+    let (near_child, far_child) = if delta < 0.0 {
+        (nd.left, nd.right)
+    } else {
+        (nd.right, nd.left)
+    };
+    kd_nearest(near_child, q, pts, nodes, best2);
+    if delta * delta < *best2 {
+        kd_nearest(far_child, q, pts, nodes, best2);
+    }
+}
+
+unsafe fn max_nearest_distance_kernel(
+    query: *const f64,
+    n_query: i64,
+    ref_: *const f64,
+    n_ref: i64,
+) -> f64 {
+    let (n_query, n_ref) = (n_query as usize, n_ref as usize);
+    let query = std::slice::from_raw_parts(query, n_query * 3);
+    let ref_pts = std::slice::from_raw_parts(ref_, n_ref * 3);
+
+    let mut idx: Vec<i64> = Vec::new();
+    let mut nodes: Vec<KdNode> = Vec::new();
+    if idx.try_reserve_exact(n_ref).is_err() || nodes.try_reserve(n_ref).is_err() {
+        return -3.0;
+    }
+    idx.extend(0..n_ref as i64);
+    let root = kd_build(0, n_ref as i64, 0, &mut idx, ref_pts, &mut nodes);
+
+    let mut max_dist = 0.0f64;
+    for q in 0..n_query {
+        let mut best2 = f64::MAX;
+        kd_nearest(root, &query[q * 3..q * 3 + 3], ref_pts, &nodes, &mut best2);
+        let d = best2.sqrt();
+        if d > max_dist {
+            max_dist = d;
+        }
+    }
+    max_dist
 }
 
 // ── 3. Capability / version probe ──
@@ -696,5 +806,88 @@ mod tests {
         // signed-volume branch runs: centroid == vertex -> signed_v
         // == 0 -> concave (0), face 1, j 0.
         assert_eq!(got, vec![(1, 0, 0), (0, 1, 0)]);
+    }
+
+    // ── max_nearest_distance kernel tests ──
+
+    /// Naive O(n_query * n_ref) reference: max over query points of the
+    /// distance to the nearest reference point.
+    fn naive_max_nearest(query: &[f64], ref_: &[f64]) -> f64 {
+        let mut max_dist = 0.0f64;
+        for i in 0..query.len() / 3 {
+            let q = &query[i * 3..i * 3 + 3];
+            let mut best2 = f64::MAX;
+            for j in 0..ref_.len() / 3 {
+                let p = &ref_[j * 3..j * 3 + 3];
+                let dx = q[0] - p[0];
+                let dy = q[1] - p[1];
+                let dz = q[2] - p[2];
+                let d2 = dx * dx + dy * dy + dz * dz;
+                if d2 < best2 {
+                    best2 = d2;
+                }
+            }
+            let d = best2.sqrt();
+            if d > max_dist {
+                max_dist = d;
+            }
+        }
+        max_dist
+    }
+
+    #[test]
+    fn max_nearest_matches_naive_reference() {
+        // Deterministic pseudo-random clouds (LCG — no rng dependency).
+        let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((state >> 33) as f64) / ((1u64 << 31) as f64)
+        };
+        let (n_query, n_ref) = (200usize, 350usize);
+        let query: Vec<f64> = (0..n_query * 3).map(|_| next()).collect();
+        let ref_: Vec<f64> = (0..n_ref * 3).map(|_| next()).collect();
+        let got = autotopo_max_nearest_distance(
+            query.as_ptr(),
+            n_query as i64,
+            ref_.as_ptr(),
+            n_ref as i64,
+        );
+        assert!(got >= 0.0, "unexpected error code {got}");
+        assert_eq!(got, naive_max_nearest(&query, &ref_));
+    }
+
+    #[test]
+    fn max_nearest_single_reference() {
+        let query = [0.1f64, 0.2, 0.3, 0.9, 0.9, 0.9];
+        let ref_ = [0.5f64, 0.5, 0.5];
+        let d = autotopo_max_nearest_distance(query.as_ptr(), 2, ref_.as_ptr(), 1);
+        // Farthest query point: (0.4, 0.4, 0.4) -> sqrt(3 * 0.16).
+        assert_eq!(d, (3.0f64 * 0.4 * 0.4).sqrt());
+    }
+
+    #[test]
+    fn max_nearest_coincident_points() {
+        let query = [0.5f64, 0.5, 0.5, 2.0, 2.0, 2.0];
+        let ref_ = [0.5f64, 0.5, 0.5];
+        let d = autotopo_max_nearest_distance(query.as_ptr(), 2, ref_.as_ptr(), 1);
+        // The coincident query point contributes 0; the far one drives
+        // the max: (1.5, 1.5, 1.5) -> sqrt(3 * 2.25).
+        assert_eq!(d, (3.0f64 * 1.5 * 1.5).sqrt());
+    }
+
+    #[test]
+    fn max_nearest_empty_sets() {
+        let q = [0.0f64; 3];
+        let r = [0.0f64; 3];
+        assert_eq!(
+            autotopo_max_nearest_distance(q.as_ptr(), 0, r.as_ptr(), 1),
+            0.0
+        );
+        assert_eq!(
+            autotopo_max_nearest_distance(q.as_ptr(), 1, r.as_ptr(), 0),
+            0.0
+        );
     }
 }

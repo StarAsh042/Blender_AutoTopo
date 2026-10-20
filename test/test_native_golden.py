@@ -24,6 +24,8 @@ Covered contract surface (grows with each ported kernel):
   the mesh (dropped), reversed key order, duplicate keys, negative
   indices (skipped), degenerate (zero-area) faces, n_sharp == 0 with
   NULL pointers, and the documented error codes (-2 / -3 / -4)
+* ``autotopo_max_nearest_distance``: random clouds, single reference
+  point, duplicate/coincident points, and the documented error code (-2)
 """
 
 import os
@@ -227,6 +229,24 @@ def test_sharp_features_bit_exact():
     assert np.array_equal(conv[:n], g["s_conv"]), "convexity mismatch"
     assert np.array_equal(fi[:n], g["s_fi"]), "face_index mismatch"
     assert np.array_equal(pos[:n], g["s_pos"]), "edge_pos mismatch"
+
+
+def test_max_nearest_distance_bit_exact():
+    lib, ct = _bind(_dll_path())
+    g = _load_golden()
+    d = lib.autotopo_max_nearest_distance(
+        g["h_query"].ctypes.data_as(ct.POINTER(ct.c_double)),
+        ct.c_int64(g["h_query"].shape[0]),
+        g["h_ref"].ctypes.data_as(ct.POINTER(ct.c_double)),
+        ct.c_int64(g["h_ref"].shape[0]))
+    assert float(d) == float(g["h_dist"]), f"{d!r} != {float(g['h_dist'])!r}"
+
+    d2 = lib.autotopo_max_nearest_distance(
+        g["h_query2"].ctypes.data_as(ct.POINTER(ct.c_double)),
+        ct.c_int64(g["h_query2"].shape[0]),
+        g["h_ref2"].ctypes.data_as(ct.POINTER(ct.c_double)),
+        ct.c_int64(g["h_ref2"].shape[0]))
+    assert float(d2) == float(g["h_dist2"]), f"{d2!r} != {float(g['h_dist2'])!r}"
 
 
 def test_error_codes():
