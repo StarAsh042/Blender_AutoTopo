@@ -1,27 +1,32 @@
 #!/usr/bin/env bash
-# Build bin/autotopo_native.dll with the MinGW-w64 g++ toolchain.
+# Build bin/autotopo_native.dll from the Rust crate
+# (native/autotopo_native) with cargo.
 #
-# POSIX-shell twin of build.bat (same flags, same pinned compiler).
-# The compiler is NOT on PATH, so its absolute location is pinned here.
-# Override with: GXX=/path/to/g++ ./build.sh
+# POSIX-shell twin of build.bat (same steps, same pinned configuration).
+# The DLL is intentionally self-contained: .cargo/config.toml pins
+# +crt-static for the MSVC target, so the shipped artifact has no VC
+# runtime dependency (matching the previous MinGW static build). It is
+# loaded by plain ctypes (utils/native.py) — no Python headers, no MSVC
+# ABI coupling.
 #
-# The DLL is intentionally self-contained (-static -static-libgcc
-# -static-libstdc++) so it has no runtime dependency on libstdc++ /
-# libwinpthread, and is loaded by plain ctypes (no Python headers, no
-# MSVC ABI coupling).
+# The script cds into the crate directory first so cargo always
+# discovers the repository-level .cargo/config.toml regardless of the
+# caller's working directory.
+#
+# After building, re-register the digest (fail-closed integrity):
+#   python scripts/gen_integrity.py
 set -euo pipefail
 
-GXX="${GXX:-C:/Users/Administrator/.workbuddy-ai/binaries/mingw64/mingw64/bin/g++.exe}"
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC="$HERE/autotopo_native.cpp"
+CRATE="$HERE/autotopo_native"
 OUT="$HERE/../bin/autotopo_native.dll"
 
-echo "[autotopo_native] compiler: $GXX"
-echo "[autotopo_native] output  : $OUT"
+echo "[autotopo_native] crate: $CRATE"
+echo "[autotopo_native] output: $OUT"
 
-"$GXX" -std=c++17 -O2 -shared -static -static-libgcc -static-libstdc++ \
-    -Wall -Wextra \
-    -o "$OUT" "$SRC"
+cd "$CRATE"
+cargo build --release
 
+cp -f "$CRATE/target/release/autotopo_native.dll" "$OUT"
 echo "[autotopo_native] BUILD OK"
+echo "[autotopo_native] remember: python scripts/gen_integrity.py"
