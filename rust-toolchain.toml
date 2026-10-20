@@ -1,0 +1,5 @@
+# Single source of truth for the Rust toolchain (CI reads this file).
+# Keep in sync with `rust-version` in native/autotopo_native/Cargo.toml.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
