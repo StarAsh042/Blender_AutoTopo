@@ -17,6 +17,7 @@ from bpy.props import IntProperty
 from ..utils.logger import logger
 from ..utils.mesh_io import blender_to_mesh_data, mesh_data_to_blender
 from ..engines.base import get_engine
+from .i18n import t
 
 
 # ── Thread-safe progress state (module-level, shared with worker thread) ──
@@ -53,16 +54,13 @@ def _progress_callback(step_name: str, pct: float):
         _progress_last_raw = max(_progress_last_raw, pct)
 
         display = pct
-        step = step_name
         if _progress_repeat > 0:
             display = min(
                 pct + min(_progress_repeat * _RETRY_NUDGE, _RETRY_MAX_NUDGE),
                 99.0,
             )
-            if _RETRY_STAGE_HINT in (step_name or ""):
-                step = f"{step_name}（重试 {_progress_repeat}/3）"
 
-        _progress_step = step
+        _progress_step = step_name
         _progress_pct = display
 
 
@@ -75,74 +73,91 @@ _cancel_requested = False
 
 
 def _to_friendly_error(err) -> str:
-    """把内部异常映射为「中文说明 + 建议动作」。
+    """Map an internal exception to a user-facing message + next step.
 
-    用户不应看到 `ValueError: ...` 这类英文栈信息；完整栈由调用方写入
-    日志。未知错误只保留简短摘要（单行、截断），不暴露完整堆栈。
+    The user must not see a raw ``ValueError: ...`` traceback; the full
+    stack is written to the log by the caller. Unknown errors keep only a
+    short single-line summary.
+
+    The *matching* keywords stay in Chinese on purpose: they mirror the
+    internal exception strings raised by the engines, which are not
+    translated. Only the returned message is localized.
     """
     if err is None:
-        return "处理失败：发生未知错误，详细信息见日志。"
+        return t("Processing failed: an unknown error occurred. "
+                 "See the log for details.")
 
     text = str(err).strip()
     low = text.lower()
 
-    # 用户取消
+    # User cancelled
     if "用户取消" in text or low in ("cancelled", "canceled") \
             or "interrupted" in low:
-        return "已取消：本次拓扑重建被中止，可调整参数后重新执行。"
+        return t("Cancelled: the retopology job was aborted. "
+                 "Adjust the parameters and try again.")
 
-    # 内置二进制完整性校验失败（被篡改 / 版本不符）。必须早于
-    # 「缺少可执行文件 / 库」分支，否则会被误判为文件缺失。
+    # Built-in binary integrity check failed (tampered / version mismatch).
+    # Must run before the "missing executable / library" branch, otherwise
+    # it would be misreported as a missing file.
     if "完整性校验失败" in text or "integrity" in low:
-        return ("内置二进制完整性校验失败：文件可能被篡改或版本不匹配。"
-                "请重新安装插件，或更新 bin/integrity.json 后重试。")
+        return t("Built-in binary integrity check failed: the files may have "
+                 "been tampered with or the version does not match. Reinstall "
+                 "the addon or update bin/integrity.json and try again.")
 
-    # QuadWild 原生库缺失
+    # QuadWild native libraries missing
     if ("库缺失" in text or "引擎库缺失" in text
             or "lib_quadwild" in low or "lib_quadpatches" in low
             or ("quadwild" in low and "filenotfound" in low)):
-        return ("缺少 QuadWild 算法库：请确认插件 bin/quadwild 目录下已放入 "
-                "lib_quadwild.dll 与 lib_quadpatches.dll，然后重启 Blender 重试。")
+        return t("QuadWild libraries are missing: make sure lib_quadwild.dll "
+                 "and lib_quadpatches.dll are in the addon's bin/quadwild "
+                 "directory, then restart Blender and try again.")
 
-    # 可执行文件缺失（AutoRemesher / QuadriFlow）
+    # Executable missing (AutoRemesher / QuadriFlow)
     if ("未找到" in text or "autoremesher" in low or "quadriflow" in low
             or "可执行" in text or "exe" in low):
-        return ("缺少外部可执行文件：请确认对应引擎已内置或已在插件偏好设置中"
-                "填写正确的可执行文件路径，然后重试。")
+        return t("External executable not found: make sure the engine is "
+                 "bundled or set the correct executable path in the addon "
+                 "preferences, then try again.")
 
-    # numpy 缺失
+    # numpy missing
     if ("numpy" in low or "no module named" in low
             or "modulenotfounderror" in low or "importerror" in low):
-        return ("缺少 Python 依赖 numpy：请为 Blender 自带 Python 安装 numpy "
-                "（或改用官方 Blender 发行版）后重试。")
+        return t("Python dependency numpy is missing: install numpy for "
+                 "Blender's bundled Python (or use the official Blender "
+                 "build) and try again.")
 
-    # 创建输出网格失败
+    # Output mesh creation failed
     if "创建网格失败" in text or "创建输出网格" in text:
-        return "创建输出网格失败：请检查输入网格是否有效，详细信息见日志。"
+        return t("Failed to create the output mesh: check that the input "
+                 "mesh is valid. See the log for details.")
 
-    # 网格数据无效
+    # Invalid mesh data
     if ("无效的网格" in text or "validate" in low
             or ("invalid" in low and "mesh" in low)):
-        return ("网格数据无效：请确认所选对象是有效网格（可在编辑模式下检查并"
-                "移除零面积面）后重试。")
+        return t("Invalid mesh data: make sure the selected object is a valid "
+                 "mesh (check it in Edit Mode and remove zero-area faces), "
+                 "then try again.")
 
-    # 未知引擎
+    # Unknown engine
     if "未知引擎" in text or "unknown engine" in low:
-        return "未知算法引擎：请在上方面板重新选择引擎后重试。"
+        return t("Unknown algorithm engine: select an engine again in the "
+                 "panel and retry.")
 
-    # 引擎未生成有效输出
+    # Engine produced no valid output
     if ("未生成输出" in text or "输出网格为空" in text
             or "输出网格无效" in text or "四边面过少" in text):
-        return ("引擎未生成有效输出：请尝试降低目标面数、关闭自适应密度或"
-                "放宽容差后重试。")
+        return t("The engine produced no valid output: try lowering the "
+                 "target face count, disabling adaptive density, or relaxing "
+                 "the tolerance, then retry.")
 
-    # 未知错误：保留单行简短摘要，不暴露完整英文栈
+    # Unknown error: keep a short single-line summary
     summary = " ".join(text.split())
     if not summary:
         summary = type(err).__name__
     elif len(summary) > 120:
         summary = summary[:117] + "..."
-    return f"处理失败：{summary}（详细信息见日志）"
+    return t("Processing failed: {summary} (see the log for details)",
+             summary=summary)
 
 
 def _resolve_exe_path(engine_id: str, context) -> str:
@@ -178,14 +193,21 @@ def _poll_timer():
     with _progress_lock:
         step = _progress_step
         pct = _progress_pct
+        repeat = _progress_repeat
+
+    # Translate on the main thread: the progress callback runs in the
+    # worker thread and must not touch bpy.app.translations.
+    display_step = t(step) if step else ""
+    if repeat > 0 and _RETRY_STAGE_HINT in (step or ""):
+        display_step = t("{step} (retry {n}/3)", step=display_step, n=repeat)
 
     # Only update UI if progress changed (avoid unnecessary redraws)
     ui_changed = False
     for scene in bpy.data.scenes:
         if hasattr(scene, 'auto_topo'):
             props = scene.auto_topo
-            if props.step_name != step or abs(props.progress - pct) > 0.5:
-                props.step_name = step
+            if props.step_name != display_step or abs(props.progress - pct) > 0.5:
+                props.step_name = display_step
                 props.progress = pct
                 ui_changed = True
 
@@ -216,7 +238,7 @@ def _poll_timer():
         for scene in bpy.data.scenes:
             if hasattr(scene, 'auto_topo'):
                 if is_cancel:
-                    scene.auto_topo.status_message = "已取消"
+                    scene.auto_topo.status_message = t("Cancelled")
                 else:
                     scene.auto_topo.status_message = _to_friendly_error(err)
                 scene.auto_topo.step_name = ""
@@ -253,7 +275,8 @@ def _handle_pipeline_done(result):
                 props.step_name = ""
                 logger.error(f"创建输出网格失败:\n{tb}")
         elif result.success:
-            props.status_message = "错误: 引擎完成但未生成输出网格"
+            props.status_message = t(
+                "Error: the engine finished but produced no output mesh")
             props.step_name = ""
             logger.error("Engine succeeded but produced no output mesh")
         else:
@@ -265,15 +288,18 @@ def _handle_pipeline_done(result):
 def _fill_result_info(props, result, output_obj):
     """Update UI with result statistics and select the output object."""
     info_lines = [
-        f"输出: {result.output_vert_count} 顶点 / {result.output_face_count} 面",
-        f"四边面: {getattr(result, 'output_quad_count', 0)} / "
-        f"三角面: {getattr(result, 'triangle_ratio', 0.0) * 100:.1f}%",
-        f"耗时: {result.time_total:.2f} 秒",
-        f"剪影误差: {getattr(result, 'silhouette_error', 0.0):.4f}",
-        f"分片数: {getattr(result, 'patch_count', 1)}",
+        t("Output: {verts} verts / {faces} faces",
+          verts=result.output_vert_count, faces=result.output_face_count),
+        t("Quads: {quads} / Triangles: {ratio:.1f}%",
+          quads=getattr(result, 'output_quad_count', 0),
+          ratio=getattr(result, 'triangle_ratio', 0.0) * 100),
+        t("Time: {seconds:.2f} s", seconds=result.time_total),
+        t("Silhouette error: {err:.4f}",
+          err=getattr(result, 'silhouette_error', 0.0)),
+        t("Patches: {patches}", patches=getattr(result, 'patch_count', 1)),
     ]
     props.last_result_info = '\n'.join(info_lines)
-    props.status_message = "完成!"
+    props.status_message = t("Done!")
     props.progress = 100.0
     props.step_name = ""
 
@@ -289,11 +315,11 @@ def _fill_result_info(props, result, output_obj):
 
 
 class AUTOTOPO_OT_Retopologize(Operator):
-    """在选中的网格上运行自动拓扑重建。"""
+    """Run automatic retopology on the selected mesh."""
 
     bl_idname = "autotopo.retopologize"
-    bl_label = "执行拓扑重建"
-    bl_description = "对当前活动网格对象执行自动拓扑重建"
+    bl_label = "Retopologize"
+    bl_description = "Run automatic retopology on the active mesh object"
     bl_options = {'REGISTER'}
 
     @classmethod
@@ -311,7 +337,7 @@ class AUTOTOPO_OT_Retopologize(Operator):
         # Defense check: ensure a mesh object is selected
         obj = context.active_object
         if obj is None or obj.type != 'MESH':
-            self.report({'ERROR'}, "请先选择一个网格对象")
+            self.report({'ERROR'}, t("Select a mesh object first"))
             return {'CANCELLED'}
 
         props = context.scene.auto_topo
@@ -319,7 +345,7 @@ class AUTOTOPO_OT_Retopologize(Operator):
 
         engine_cls = get_engine(engine_id)
         if engine_cls is None:
-            self.report({'ERROR'}, f"未知引擎 '{engine_id}'")
+            self.report({'ERROR'}, t("Unknown engine '{engine}'", engine=engine_id))
             props.is_processing = False
             props.status_message = _to_friendly_error(f"未知引擎 '{engine_id}'")
             return {'CANCELLED'}
@@ -361,8 +387,8 @@ class AUTOTOPO_OT_Retopologize(Operator):
         # Mark processing
         props.is_processing = True
         props.progress = 0.0
-        props.step_name = "启动中..."
-        props.status_message = "正在处理..."
+        props.step_name = t("Starting...")
+        props.status_message = t("Processing...")
 
         thread = threading.Thread(
             target=_run_engine_thread,
@@ -374,7 +400,7 @@ class AUTOTOPO_OT_Retopologize(Operator):
         # Register non-blocking timer (does NOT block UI interaction)
         bpy.app.timers.register(_poll_timer, first_interval=0.1)
 
-        self.report({'INFO'}, "拓扑重建已启动，可在后台继续操作...")
+        self.report({'INFO'}, t("Retopology started; you can keep working in the background..."))
         return {'FINISHED'}
 
 
@@ -408,26 +434,27 @@ def _run_engine_thread(engine_cls, input_mesh, target_face_count, settings):
 
 
 class AUTOTOPO_OT_Cancel(Operator):
-    """取消正在进行的拓扑重建。"""
+    """Cancel the running retopology job."""
 
     bl_idname = "autotopo.cancel"
-    bl_label = "取消拓扑重建"
-    bl_description = "取消正在进行的拓扑重建"
+    bl_label = "Cancel Retopology"
+    bl_description = "Cancel the running retopology job"
 
     def execute(self, context):
         global _cancel_requested
         _cancel_requested = True
-        context.scene.auto_topo.status_message = "正在取消（当前阶段结束后生效）..."
-        self.report({'WARNING'}, "已请求取消拓扑重建")
+        context.scene.auto_topo.status_message = t(
+            "Cancelling (takes effect after the current stage)...")
+        self.report({'WARNING'}, t("Cancellation requested"))
         return {'FINISHED'}
 
 
 class AUTOTOPO_OT_SetFaceCount(Operator):
-    """快捷设置目标面数。"""
+    """Quickly set the target face count."""
 
     bl_idname = "autotopo.set_face_count"
-    bl_label = "设置面数"
-    bl_description = "快捷设置目标面数"
+    bl_label = "Set Face Count"
+    bl_description = "Quickly set the target face count"
 
     count: IntProperty(default=2000)
 
