@@ -280,6 +280,7 @@ jobs:
         run: |
           $tests = @(
             "test/test_register_smoke.py",
+            "test/test_i18n_runtime.py",
             "test/test_addon_integration.py",
             "test/test_engine_dispatch.py",
             "test/test_quadwild_e2e.py",
