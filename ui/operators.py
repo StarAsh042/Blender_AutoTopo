@@ -32,7 +32,7 @@ _progress_last_raw = -1.0
 _progress_repeat = 0
 _RETRY_NUDGE = 4.0        # 每次重复上报推进的百分比
 _RETRY_MAX_NUDGE = 12.0   # 单个阶段内最多推进的百分比
-_RETRY_STAGE_HINT = "四边面化"  # 需要标注重试次数的阶段名
+_RETRY_STAGE_HINT = "Quadrangulation"  # 需要标注重试次数的阶段名
 
 
 def _progress_callback(step_name: str, pct: float):

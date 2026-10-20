@@ -112,110 +112,129 @@ class AutoTopoProperties(PropertyGroup):
     # === QuadWild 参数（与 engines/quadwild_engine.py 的 SettingSpec 同步） ===
 
     qw_keep_sharp: BoolProperty(
-        name="保留锐边", default=True,
-        description="重拓扑时检测并保留锐利边缘特征（关闭则视为纯平滑曲面）")
+        name="Keep Sharp Edges", default=True,
+        description="Detect and preserve sharp edge features during retopology "
+                    "(disable to treat the surface as fully smooth)")
     qw_tolerance: FloatProperty(
-        name="面数容差 (%)", default=10.0, min=1.0, max=20.0, precision=1,
-        description="允许输出面数相对目标的偏差（百分比），超出则重跑四边面化")
+        name="Face Count Tolerance (%)", default=10.0, min=1.0, max=20.0, precision=1,
+        description="Allowed deviation of the output face count from the target "
+                    "(percent); exceeding it reruns quadrangulation")
     qw_adaptive_density: BoolProperty(
-        name="自适应密度", default=True,
-        description="按细节分布面数：破损/高曲率区域更密、平面更疏")
+        name="Adaptive Density", default=True,
+        description="Distribute faces by detail: denser in damaged/high-curvature "
+                    "areas, sparser on flat regions")
     qw_isometry: BoolProperty(
-        name="等距约束", default=True,
-        description="保持局部等距，减少拉伸变形（论文默认开启）")
+        name="Isometry Constraint", default=True,
+        description="Preserve local isometry and reduce stretching (paper default: on)")
     qw_hard_parity: BoolProperty(
-        name="硬奇偶性约束", default=True,
-        description="强制四边形奇偶性约束，减少非四边面（论文默认开启）")
+        name="Hard Parity Constraint", default=True,
+        description="Enforce quad parity constraints to reduce non-quad faces "
+                    "(paper default: on)")
     qw_use_flow_solver: BoolProperty(
-        name="流求解器", default=True,
-        description="使用流求解器求解整数约束（论文默认开启）")
+        name="Flow Solver", default=True,
+        description="Use the flow solver for integer constraints (paper default: on)")
     qw_final_smoothing: BoolProperty(
-        name="最终平滑", default=True,
-        description="四边面化完成后做一次整体平滑（论文默认开启）")
+        name="Final Smoothing", default=True,
+        description="Run one global smoothing pass after quadrangulation "
+                    "(paper default: on)")
     qw_doublet_removal: BoolProperty(
-        name="双元移除", default=True,
-        description="移除 doublet（相邻重复四边形），改善网格质量（默认开启）")
+        name="Doublet Removal", default=True,
+        description="Remove doublets (adjacent duplicate quads) to improve mesh "
+                    "quality (default: on)")
     qw_split_concaves: BoolProperty(
-        name="拆分凹面", default=False,
-        description="拆分凹四边形以避免退化（默认关闭，可能改变面数）")
+        name="Split Concave Quads", default=False,
+        description="Split concave quads to avoid degeneration (default: off; may "
+                    "change the face count)")
 
     # --- 高级参数（论文/参考实现默认值） ---
     qw_ilp_method: IntProperty(
-        name="ILP 方法", default=1, min=0, max=3,
-        description="整数规划求解方法：0=高斯、1=最小二乘(默认)、2/3=其它")
+        name="ILP Method", default=1, min=0, max=3,
+        description="Integer programming solver: 0 = Gaussian, 1 = least squares "
+                    "(default), 2/3 = others")
     qw_time_limit: FloatProperty(
-        name="求解时间上限 (s)", default=60.0, min=1.0, max=600.0, precision=0,
-        description="四边面化 ILP 求解的时间上限（秒）")
+        name="Solver Time Limit (s)", default=60.0, min=1.0, max=600.0, precision=0,
+        description="Time limit for the quadrangulation ILP solve (seconds)")
     qw_alpha: FloatProperty(
-        name="对齐权重 α", default=0.005, min=0.0, max=1.0, precision=3,
-        description="奇点对齐的能量权重（越小越弱）")
+        name="Alignment Weight α", default=0.005, min=0.0, max=1.0, precision=3,
+        description="Energy weight for singularity alignment (smaller = weaker)")
     qw_minimum_gap: FloatProperty(
-        name="最小间隙", default=0.4, min=0.0, max=1.0, precision=2,
-        description="ILP 求解的最小间隙阈值")
+        name="Minimum Gap", default=0.4, min=0.0, max=1.0, precision=2,
+        description="Minimum gap threshold for the ILP solve")
     qw_gap_limit: FloatProperty(
-        name="间隙上限", default=0.0, min=0.0, max=1.0, precision=2,
-        description="ILP 求解的间隙停止阈值")
+        name="Gap Limit", default=0.0, min=0.0, max=1.0, precision=2,
+        description="Gap stopping threshold for the ILP solve")
     qw_align_sing_weight: FloatProperty(
-        name="奇点对齐权重", default=0.1, min=0.0, max=1.0, precision=2,
-        description="奇点对齐项权重（与 α 协同）")
+        name="Singularity Alignment Weight", default=0.1, min=0.0, max=1.0, precision=2,
+        description="Weight of the singularity alignment term (works with α)")
     qw_regularity_weight: FloatProperty(
-        name="规则性权重", default=0.9, min=0.0, max=1.0, precision=2,
-        description="非四边形规则性惩罚权重")
+        name="Regularity Weight", default=0.9, min=0.0, max=1.0, precision=2,
+        description="Penalty weight for non-quad regularity")
     qw_result_smooth_iters: IntProperty(
-        name="结果平滑迭代", default=5, min=0, max=50,
-        description="最终结果整体平滑迭代次数")
+        name="Result Smoothing Iterations", default=5, min=0, max=50,
+        description="Number of global smoothing iterations on the final result")
     qw_result_smooth_laplacian: IntProperty(
-        name="拉普拉斯平滑迭代", default=2, min=0, max=50,
-        description="最终结果拉普拉斯平滑迭代次数")
+        name="Laplacian Smoothing Iterations", default=2, min=0, max=50,
+        description="Number of Laplacian smoothing iterations on the final result")
     qw_chart_smooth_iters: IntProperty(
-        name="图表平滑迭代", default=0, min=0, max=50,
-        description="图表平滑迭代次数")
+        name="Chart Smoothing Iterations", default=0, min=0, max=50,
+        description="Number of chart smoothing iterations")
     qw_quad_smooth_fixed: IntProperty(
-        name="固定点平滑迭代", default=0, min=0, max=50,
-        description="四边面化固定点平滑迭代次数")
+        name="Fixed-Point Smoothing Iterations", default=0, min=0, max=50,
+        description="Number of fixed-point smoothing iterations during "
+                    "quadrangulation")
     qw_quad_smooth_nonfixed: IntProperty(
-        name="非固定点平滑迭代", default=0, min=0, max=50,
-        description="四边面化非固定点平滑迭代次数")
+        name="Non-Fixed-Point Smoothing Iterations", default=0, min=0, max=50,
+        description="Number of non-fixed-point smoothing iterations during "
+                    "quadrangulation")
     qw_feasibility_fix: BoolProperty(
-        name="可行性修复", default=False,
-        description="启用可行性修复后处理（默认关闭）")
+        name="Feasibility Fix", default=False,
+        description="Enable feasibility-fix post-processing (default: off)")
 
     # === AutoRemesher 参数（与 engines/autoremesher_engine.py 同步） ===
 
     ar_edge_scaling: FloatProperty(
-        name="边长缩放", default=1.0, min=1.0, max=4.0, precision=2,
-        description="全局边长缩放系数。大于 1 使四边面更稀疏（默认 1.0）")
+        name="Edge Length Scale", default=1.0, min=1.0, max=4.0, precision=2,
+        description="Global edge length scale. Values above 1 make quads sparser "
+                    "(default 1.0)")
     ar_smooth_normal: FloatProperty(
-        name="平滑法线角度 (°)", default=0.0, min=0.0, max=180.0, precision=1,
-        description="小于该角度时法线平滑着色；0 表示不平滑（默认 0）")
+        name="Smooth Normal Angle (°)", default=0.0, min=0.0, max=180.0, precision=1,
+        description="Smooth normals below this angle; 0 disables smoothing "
+                    "(default 0)")
     ar_adaptivity: FloatProperty(
-        name="自适应密度", default=1.0, min=0.0, max=1.0, precision=2,
-        description="按曲率分配面数：1 为完全自适应，0 为均匀（默认 1.0）")
+        name="Adaptive Density", default=1.0, min=0.0, max=1.0, precision=2,
+        description="Distribute faces by curvature: 1 = fully adaptive, 0 = uniform "
+                    "(default 1.0)")
     ar_anisotropy: FloatProperty(
-        name="各向异性拉伸", default=1.0, min=0.0, max=1.0, precision=2,
-        description="沿曲率方向拉长四边面：1 为允许拉伸，0 为保持方正（默认 1.0）")
+        name="Anisotropic Stretch", default=1.0, min=0.0, max=1.0, precision=2,
+        description="Stretch quads along the curvature direction: 1 = allow "
+                    "stretching, 0 = keep square (default 1.0)")
     ar_write_report: BoolProperty(
-        name="输出统计报告", default=False,
-        description="额外让 AutoRemesher 写一份统计文件"
-                    "（四边面/非四边面/顶点/耗时）")
+        name="Write Statistics Report", default=False,
+        description="Ask AutoRemesher to also write a statistics file "
+                    "(quads/non-quads/vertices/time)")
 
     # === QuadriFlow 参数（与 engines/quadriflow_engine.py 同步） ===
 
     qf_preserve_sharp: BoolProperty(
-        name="保留锐边", default=False,
-        description="-sharp：保留输入网格的锐利特征边（上游默认关闭）")
+        name="Preserve Sharp Edges", default=False,
+        description="-sharp: preserve sharp feature edges from the input mesh "
+                    "(upstream default: off)")
     qf_preserve_boundary: BoolProperty(
-        name="保留边界", default=False,
-        description="-boundary：为开放边界添加约束（上游默认关闭）")
+        name="Preserve Boundary", default=False,
+        description="-boundary: add constraints for open boundaries "
+                    "(upstream default: off)")
     qf_adaptive_scale: BoolProperty(
-        name="自适应尺度", default=False,
-        description="-adaptive：允许尺度随曲率自适应（上游默认关闭）")
+        name="Adaptive Scale", default=False,
+        description="-adaptive: allow the scale to adapt to curvature "
+                    "(upstream default: off)")
     qf_minimum_cost_flow: BoolProperty(
-        name="最小费用流模式", default=False,
-        description="-mcf：改用最小费用流求解整数约束，README 推荐的替代模式")
+        name="Minimum Cost Flow Mode", default=False,
+        description="-mcf: use the minimum-cost-flow solver for integer "
+                    "constraints; the README-recommended alternative")
     qf_aggressive_sat: BoolProperty(
-        name="激进 SAT 求解", default=False,
-        description="-sat：更激进的 SAT 求解（上游默认关闭）")
+        name="Aggressive SAT", default=False,
+        description="-sat: more aggressive SAT solving (upstream default: off)")
     qf_seed: IntProperty(
-        name="随机种子", default=0, min=0, soft_max=100000,
-        description="-seed：固定随机种子以获得可复现结果（0 表示由程序决定）")
+        name="Random Seed", default=0, min=0, soft_max=100000,
+        description="-seed: fix the random seed for reproducible results "
+                    "(0 = chosen by the program)")

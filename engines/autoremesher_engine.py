@@ -278,7 +278,7 @@ class AutoRemesherEngine(RemeshEngine):
             result.input_vert_count = input_mesh.n_verts
             result.input_face_count = input_mesh.n_faces
 
-            report("导出网格...", 10.0)
+            report("Exporting mesh...", 10.0)
             workdir = tempfile.mkdtemp(prefix="autotopo_autoremesher_")
             in_path = os.path.join(workdir, "input.obj")
             out_path = os.path.join(workdir, "output.obj")
@@ -287,7 +287,7 @@ class AutoRemesherEngine(RemeshEngine):
             if cancelled():
                 raise InterruptedError("用户取消")
 
-            report("运行 AutoRemesher...", 40.0)
+            report("Running AutoRemesher...", 40.0)
             cmd: List[str] = [
                 exe,
                 "-i", in_path,
@@ -346,7 +346,7 @@ class AutoRemesherEngine(RemeshEngine):
             if cancelled():
                 raise InterruptedError("用户取消")
 
-            report("读取结果...", 80.0)
+            report("Reading result...", 80.0)
             output_mesh = obj_to_mesh_data(out_path)
             if not output_mesh.validate():
                 result.error_message = "AutoRemesher 输出网格无效"
@@ -377,7 +377,7 @@ class AutoRemesherEngine(RemeshEngine):
                 logger.warning("Silhouette error computation failed: %s", e)
                 result.silhouette_error = 0.0
 
-            report("完成", 100.0)
+            report("Done", 100.0)
             result.success = True
             logger.info(
                 "AutoRemesher: %d faces (%d quads, %d tris)",

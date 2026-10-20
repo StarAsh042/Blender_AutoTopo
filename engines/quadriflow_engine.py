@@ -236,7 +236,7 @@ class QuadriFlowEngine(RemeshEngine):
             result.input_vert_count = input_mesh.n_verts
             result.input_face_count = input_mesh.n_faces
 
-            report("导出网格...", 10.0)
+            report("Exporting mesh...", 10.0)
             workdir = tempfile.mkdtemp(prefix="autotopo_quadriflow_")
             in_path = os.path.join(workdir, "input.obj")
             out_path = os.path.join(workdir, "output.obj")
@@ -245,7 +245,7 @@ class QuadriFlowEngine(RemeshEngine):
             if cancelled():
                 raise InterruptedError("用户取消")
 
-            report("运行 QuadriFlow...", 40.0)
+            report("Running QuadriFlow...", 40.0)
             cmd: List[str] = [
                 exe,
                 "-i", in_path,
@@ -295,7 +295,7 @@ class QuadriFlowEngine(RemeshEngine):
             if cancelled():
                 raise InterruptedError("用户取消")
 
-            report("读取结果...", 80.0)
+            report("Reading result...", 80.0)
             output_mesh = obj_to_mesh_data(out_path)
             if not output_mesh.validate():
                 result.error_message = "QuadriFlow 输出网格无效"
@@ -322,7 +322,7 @@ class QuadriFlowEngine(RemeshEngine):
                 logger.warning("Silhouette error computation failed: %s", e)
                 result.silhouette_error = 0.0
 
-            report("完成", 100.0)
+            report("Done", 100.0)
             result.success = True
             logger.info(
                 "QuadriFlow: %d faces (%d quads, %d tris)",

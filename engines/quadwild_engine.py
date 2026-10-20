@@ -644,7 +644,7 @@ def run_quadwild(
         result.input_face_count = input_mesh.n_faces
 
         # Stage 0: export input mesh to OBJ
-        report("导出网格...", 5.0)
+        report("Exporting mesh...", 5.0)
         t0 = time.time()
         workdir = tempfile.mkdtemp(prefix="autotopo_quadwild_")
         mesh_path = os.path.join(workdir, "input.obj")
@@ -660,7 +660,7 @@ def run_quadwild(
         # hasFeature is enabled)
         n_sharp = 0
         if keep_sharp:
-            report("检测锐边特征...", 8.0)
+            report("Detecting sharp features...", 8.0)
             t0 = time.time()
             n_sharp = _export_sharp_features(
                 input_mesh, sharp_angle, qw.sharp_path,
@@ -678,7 +678,7 @@ def run_quadwild(
         if adaptive_density:
             qw_target = max(int(target_face_count * 0.25), 50)
 
-        report("重网格化与方向场计算...", 15.0)
+        report("Remeshing and computing the direction field...", 15.0)
         t0 = time.time()
         qw.remesh_and_field(enable_sharp=keep_sharp, sharp_angle=sharp_angle)
         logger.info(f"Stage timing: remesh+field {time.time() - t0:.2f}s")
@@ -686,7 +686,7 @@ def run_quadwild(
             raise InterruptedError("用户取消")
 
         # Stage 2: field tracing
-        report("流线追踪...", 40.0 if adaptive_density else 45.0)
+        report("Tracing streamlines...", 40.0 if adaptive_density else 45.0)
         t0 = time.time()
         qw.trace()
         logger.info(f"Stage timing: trace {time.time() - t0:.2f}s")
@@ -706,7 +706,7 @@ def run_quadwild(
         quad_base_pct = 55.0 if adaptive_density else 60.0
         for attempt in range(3):
             report(
-                f"四边面化 (密度 {scale_fact:.2f})...",
+                "Quadrangulation...",
                 quad_base_pct + attempt * 5.0,
             )
             t0 = time.time()
@@ -738,7 +738,7 @@ def run_quadwild(
 
         if adaptive_density:
             # Stage 4: error-driven adaptive quad subdivision
-            report("自适应细节细分...", 70.0)
+            report("Adaptive detail subdivision...", 70.0)
             base_verts, base_faces = read_obj(output_path)
             base_quads = [tuple(f) for f in base_faces if len(f) == 4]
             kept_tris = [tuple(f) for f in base_faces if len(f) == 3]
@@ -748,7 +748,7 @@ def run_quadwild(
                 raise InterruptedError("用户取消")
 
             def subd_progress(pct: float):
-                report("自适应细节细分...", 70.0 + pct * 0.22)
+                report("Adaptive detail subdivision...", 70.0 + pct * 0.22)
 
             t0 = time.time()
             new_verts, subd_faces, _ = adaptive_subdivide(
@@ -767,12 +767,12 @@ def run_quadwild(
                 f"(budget {target_face_count}) "
                 f"[{time.time() - t0:.2f}s]"
             )
-            report("读取结果...", 94.0)
+            report("Reading result...", 94.0)
             output_mesh = _build_mesh_data(
                 new_verts, subd_faces + kept_tris
             )
         else:
-            report("读取结果...", 92.0)
+            report("Reading result...", 92.0)
             output_mesh = obj_to_mesh_data(output_path)
 
         if not output_mesh.validate():
@@ -803,7 +803,7 @@ def run_quadwild(
             result.silhouette_error = 0.0
         result.patch_count = 1
 
-        report("完成", 100.0)
+        report("Done", 100.0)
         result.success = True
         logger.info(
             f"QuadWild engine finished: {result.output_face_count} faces "
