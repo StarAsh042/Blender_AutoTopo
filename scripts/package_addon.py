@@ -3,8 +3,8 @@
 Produces dist/Blender_AutoTopo-1.0.0.zip with every addon file under a
 top-level ``Blender_AutoTopo/`` directory, excluding dev/CI artifacts:
 ``.workbuddy-ai``, ``deliverables``, ``dist``, ``.pytest_cache``,
-``.github`` (CI config), any ``__pycache__`` tree, and stray ``.zip``
-bundles inside ``bin/``.
+``.github`` (CI config), any ``__pycache__`` tree, any ``target``
+tree (Rust build output), and stray ``.zip`` bundles inside ``bin/``.
 """
 
 import os
@@ -25,6 +25,7 @@ EXCLUDE_DIRS = {
     ".git",
     ".github",
     "node_modules",
+    "target",
 }
 
 EXCLUDE_TOP_FILES = {
