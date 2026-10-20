@@ -237,10 +237,19 @@ jobs:
         if: steps.blender_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          $url = "https://download.blender.org/release/Blender3.4/$env:BLENDER_ZIP"
-          Invoke-WebRequest -Uri $url -OutFile blender.zip
-          $shaText = (Invoke-WebRequest -Uri "$url.sha256" -UseBasicParsing).Content
-          $expected = ($shaText -split '\s+')[0].ToLower()
+          $ver = $env:BLENDER_VERSION
+          $zipName = $env:BLENDER_ZIP
+          $base = "https://download.blender.org/release/Blender3.4"
+          Invoke-WebRequest -Uri "$base/$zipName" -OutFile blender.zip
+
+          # Blender publishes one checksum file per release (all platforms),
+          # e.g. blender-3.4.1.sha256 — not a per-asset .sha256.
+          $shaText = (Invoke-WebRequest -Uri "$base/blender-$ver.sha256" -UseBasicParsing).Content
+          $line = ($shaText -split "\r?\n") |
+            Where-Object { $_ -match [regex]::Escape($zipName) } |
+            Select-Object -First 1
+          if (-not $line) { throw "checksum entry for $zipName not found" }
+          $expected = ($line -split '\s+')[0].ToLower()
           $actual = (Get-FileHash -Algorithm SHA256 blender.zip).Hash.ToLower()
           if ($expected -ne $actual) { throw "Blender sha256 mismatch: $actual != $expected" }
           Expand-Archive -Path blender.zip -DestinationPath C:\blender
