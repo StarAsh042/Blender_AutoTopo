@@ -5,6 +5,38 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0] - 2026-10-20
+
+原生加速内核由 C++ 重写为 Rust。ctypes ABI、错误码与输出结果保持逐位一致
+（golden master 锁定，基准取自 C++ 版）。
+
+### 变更
+
+- **破坏性（技术性，终端用户无感）**：`bin/autotopo_native.dll` 改由 Rust
+  crate `native/autotopo_native/` 构建（cargo + MSVC，`.cargo/config.toml`
+  固定 `crt-static` 保持自包含、无 VC 运行时依赖）；`native/autotopo_native.cpp`
+  与 MinGW 构建链移除。四个导出符号、错误码（-1 ~ -5）与空输入行为不变。
+- 插件版本号 1.0.0 → 2.0.0（`bl_info` / 打包产物 / git 标签一致）。
+- 打包脚本与产物测试中的版本常量更新为 2.0.0。
+
+### 新增
+
+- `test/test_native_golden.py`：固定种子夹具下两个内核对 C++ 版 golden 数据
+  逐位比对（覆盖边界边、逆序/重复/负索引键、退化面、错误码等分支）。
+- CI 新增 Rust 门禁 job：`cargo fmt --check` / `clippy -D warnings` /
+  `cargo test` / `cargo build --release`，并带新构建 DLL 的 golden 漂移检测。
+- crate 文档（`native/autotopo_native/README.md`）与 MSRV（rust-version = 1.99）。
+
+### 性能
+
+- 锐边特征导出约 4× 于原 C++ 实现（10 万面夹具 0.163s → 0.041s）。
+- 轮廓误差约 1.2×（60 万面：silhouette 0.75s → 0.50s，dihedral 0.65s → 0.63s）。
+
+### 已知遗留
+
+- `utils/native.py` 的实现标签仍为 `'cpp'`（被既有测试断言，本次不动加载器），
+  其文档字符串中的 "C++" 表述待后续刷新。
+
 ## [1.0.0] - 2026-10-03
 
 首个公开发行版。
