@@ -9,7 +9,7 @@ This is the closest CI can get to what a user does:
      (register/unregister symmetry in practice)
 
 Run:
-  AUTOTOPO_ZIP=dist/Blender_AutoTopo-2.0.0.zip \\
+  AUTOTOPO_ZIP=dist/Blender_AutoTopo-2.1.0.zip \\
     blender --background --factory-startup --python-exit-code 1 \\
     --python test/blender_install_smoke.py
 
