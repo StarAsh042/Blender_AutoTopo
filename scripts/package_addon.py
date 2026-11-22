@@ -18,6 +18,9 @@ PREFIX = "Blender_AutoTopo"
 
 EXCLUDE_DIRS = {
     ".workbuddy-ai",
+    ".dsh-ops",
+    ".workbuddy",
+    "fbx",
     "deliverables",
     "dist",
     ".pytest_cache",
