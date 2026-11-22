@@ -161,3 +161,20 @@ def test_negative_missing_key_is_detected():
     del catalog[victim]
     missing, _, _ = check_parity(catalog)
     assert victim in missing
+
+
+def test_translations_register_both_locale_keys():
+    """Blender 3.x uses zh_CN; 4.0+ uses zh_HANS.
+
+    Both locales must be registered or the whole catalog is silently
+    ignored on the other major version. Guard the registration surface
+    itself, which test_i18n_runtime.py cannot reach without Blender.
+    """
+    translations = _CATALOG.TRANSLATIONS
+    expected = {
+        **{("*", msgid): text for msgid, text in _CATALOG._ENTRIES.items()},
+        **{("AutoTopo", msgid): text for msgid, text in _CATALOG._ENTRIES.items()},
+    }
+    for locale in ("zh_CN", "zh_HANS"):
+        assert locale in translations, f"missing locale key: {locale}"
+        assert translations[locale] == expected, f"catalog mismatch for {locale}"
