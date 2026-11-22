@@ -1,6 +1,6 @@
 """Package Blender_AutoTopo into a Blender-installable zip.
 
-Produces dist/Blender_AutoTopo-2.1.0.zip with every addon file under a
+Produces dist/Blender_AutoTopo-2.2.0.zip with every addon file under a
 top-level ``Blender_AutoTopo/`` directory, excluding dev/CI artifacts:
 ``.workbuddy-ai``, ``deliverables``, ``dist``, ``.pytest_cache``,
 ``.github`` (CI config), any ``__pycache__`` tree, any ``target``
@@ -12,12 +12,15 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist")
-OUT = os.path.join(DIST, "Blender_AutoTopo-2.1.0.zip")
+OUT = os.path.join(DIST, "Blender_AutoTopo-2.2.0.zip")
 
 PREFIX = "Blender_AutoTopo"
 
 EXCLUDE_DIRS = {
     ".workbuddy-ai",
+    ".dsh-ops",
+    ".workbuddy",
+    "fbx",
     "deliverables",
     "dist",
     ".pytest_cache",

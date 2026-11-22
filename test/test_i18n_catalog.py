@@ -161,3 +161,77 @@ def test_negative_missing_key_is_detected():
     del catalog[victim]
     missing, _, _ = check_parity(catalog)
     assert victim in missing
+
+
+def test_translations_register_ui_contexts():
+    """Blender draws RNA properties and operator buttons in dedicated
+    contexts; registering only '*' and 'AutoTopo' leaves those strings
+    untranslated (issue #7)."""
+    required = {
+        ("*", "Target Face Count"),
+        ("AutoTopo", "Target Face Count"),
+        ("Operator", "Retopologize"),
+        ("RNA", "Target Face Count"),
+        ("RNA", "Adaptive Density"),
+    }
+    for locale in ("zh_HANS", "zh_CN"):
+        catalog = _CATALOG.TRANSLATIONS[locale]
+        missing = sorted(key for key in required if key not in catalog)
+        assert not missing, "%s missing UI-context keys: %s" % (locale, missing)
+
+
+def test_retopologize_button_uses_explicit_translation():
+    """The two Run buttons must pass text=t("Retopologize").
+
+    Operator buttons that omit text= rely on Blender auto-translating
+    bl_label. That path is unreliable on 3.x, leaving the button in
+    English (issue #7). Every other button already passes text=t(...).
+    """
+    panels = os.path.join(_PROJECT_ROOT, "ui", "panels.py")
+    with open(panels, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=panels)
+
+    calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and any(
+            isinstance(a, ast.Constant) and a.value == "autotopo.retopologize"
+            for a in node.args
+        )
+    ]
+    assert calls, "no autotopo.retopologize operator call found in panels.py"
+    for node in calls:
+        text_kw = next((kw for kw in node.keywords if kw.arg == "text"), None)
+        assert text_kw is not None, (
+            "retopologize operator at line %d missing explicit text=" % node.lineno
+        )
+        value = text_kw.value
+        is_translated = (
+            isinstance(value, ast.Call)
+            and getattr(value.func, "id", None) == "t"
+            and value.args
+            and isinstance(value.args[0], ast.Constant)
+            and value.args[0].value == "Retopologize"
+        )
+        assert is_translated, (
+            "retopologize operator at line %d must use text=t(\"Retopologize\")"
+            % node.lineno
+        )
+
+
+def test_translations_register_both_locale_keys():
+    """Blender 3.x uses zh_CN; 4.0+ uses zh_HANS.
+
+    Both locales must be registered or the whole catalog is silently
+    ignored on the other major version. Guard the registration surface
+    itself, which test_i18n_runtime.py cannot reach without Blender.
+    """
+    translations = _CATALOG.TRANSLATIONS
+    expected = {
+        (context, msgid): text
+        for context in ("*", "AutoTopo", "Operator", "RNA")
+        for msgid, text in _CATALOG._ENTRIES.items()
+    }
+    for locale in ("zh_CN", "zh_HANS"):
+        assert locale in translations, f"missing locale key: {locale}"
+        assert translations[locale] == expected, f"catalog mismatch for {locale}"

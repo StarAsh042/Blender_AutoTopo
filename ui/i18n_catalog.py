@@ -261,8 +261,14 @@ _ENTRIES = {
 }
 
 TRANSLATIONS = {
-    "zh_CN": {
-        **{("*", msgid): text for msgid, text in _ENTRIES.items()},
-        **{("AutoTopo", msgid): text for msgid, text in _ENTRIES.items()},
-    },
+    locale: {
+        # Blender draws property labels in the "RNA" context and operator
+        # buttons in the "Operator" context. Without these, those strings
+        # stay English even though '*'/runtime strings are translated
+        # (issue #7).
+        **{(context, msgid): text
+           for context in ("*", "AutoTopo", "Operator", "RNA")
+           for msgid, text in _ENTRIES.items()},
+    }
+    for locale in ("zh_HANS", "zh_CN")
 }
