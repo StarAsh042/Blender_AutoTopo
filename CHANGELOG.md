@@ -5,6 +5,25 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.2.0] - 2026-11-23
+
+修复 Blender 4.0+ 汉化完全失效，以及 3.x 下 Retopologize 按钮未翻译的问题。
+
+### 修复
+
+- **语言 key 兼容**：`TRANSLATIONS` 同时注册 `zh_HANS` 与 `zh_CN`，兼容 Blender 4.x 与 3.x。Blender 4.0 起改用 `zh_HANS`，原词库因 key 不匹配被静默忽略。
+- **翻译 context**：补齐 `RNA` 与 `Operator` 两种 context。RNA 属性标签与 operator 按钮由这两种 context 渲染，原词库只注册 `*` 与 `AutoTopo`，导致 `Target Face Count`、`Adaptive Density`、`Parameters` 仍显示英文。
+- **Retopologize 按钮**：`ui/panels.py` 中两处调用改为显式传入 `text=t("Retopologize")`，修复 Blender 3.x 下依赖 `bl_label` 自动翻译不稳定的问题。
+- 新增回归测试，覆盖 locale key、context 注册与按钮显式翻译。
+
+### 验证
+
+- 在 Blender 3.4 / 3.6 / 4.5 三个版本 GUI 复测，确认面板标签与按钮全部正常显示中文。
+
+### 已知问题
+
+- Blender 4.5 下执行拓扑重建会因 `mesh.use_auto_smooth` 属性在 4.0+ 被移除而失败（#8）。该问题与汉化无关，本版未处理。
+
 ## [2.1.0] - 2026-10-21
 
 新增英文/简体中文双语界面，跟随 Blender 的界面语言设置。
