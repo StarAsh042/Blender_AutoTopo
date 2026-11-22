@@ -68,7 +68,7 @@ class AUTOTOPO_PT_MainPanel(Panel):
             layout.separator()
             row = layout.row()
             row.scale_y = 2.0
-            row.operator("autotopo.retopologize", icon='MESH_DATA')
+            row.operator("autotopo.retopologize", icon='MESH_DATA', text=t("Retopologize"))
             self._draw_status(layout, props)
             return
 
@@ -108,7 +108,7 @@ class AUTOTOPO_PT_MainPanel(Panel):
         layout.separator()
         row = layout.row()
         row.scale_y = 2.0
-        row.operator("autotopo.retopologize", icon='MESH_DATA')
+        row.operator("autotopo.retopologize", icon='MESH_DATA', text=t("Retopologize"))
 
         self._draw_status(layout, props)
 
