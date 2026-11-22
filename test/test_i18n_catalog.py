@@ -163,6 +163,23 @@ def test_negative_missing_key_is_detected():
     assert victim in missing
 
 
+def test_translations_register_ui_contexts():
+    """Blender draws RNA properties and operator buttons in dedicated
+    contexts; registering only '*' and 'AutoTopo' leaves those strings
+    untranslated (issue #7)."""
+    required = {
+        ("*", "Target Face Count"),
+        ("AutoTopo", "Target Face Count"),
+        ("Operator", "Retopologize"),
+        ("RNA", "Target Face Count"),
+        ("RNA", "Adaptive Density"),
+    }
+    for locale in ("zh_HANS", "zh_CN"):
+        catalog = _CATALOG.TRANSLATIONS[locale]
+        missing = sorted(key for key in required if key not in catalog)
+        assert not missing, "%s missing UI-context keys: %s" % (locale, missing)
+
+
 def test_translations_register_both_locale_keys():
     """Blender 3.x uses zh_CN; 4.0+ uses zh_HANS.
 

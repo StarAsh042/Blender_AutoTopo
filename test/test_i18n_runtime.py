@@ -40,14 +40,10 @@ def _run():
     prefs = bpy.context.preferences.view
     original = prefs.language
     # Blender 3.x calls Simplified Chinese "zh_CN"; 4.0+ calls it
-    # "zh_HANS" (BCP 47). Pick whichever this build accepts so the test
-    # actually reaches the translation assertions on every version.
-    zh = next(
-        (code for code in ("zh_HANS", "zh_CN")
-         if code in {item.identifier for item in
-                     prefs.bl_rna.properties['language'].enum_items}),
-        None,
-    )
+    # "zh_HANS" (BCP 47). ``enum_items`` is empty in background mode, so
+    # select from the locales Blender actually reports as available.
+    available = set(bpy.app.translations.locales)
+    zh = next((code for code in ("zh_HANS", "zh_CN") if code in available), None)
     assert zh is not None, "no Simplified Chinese locale in this Blender"
     try:
         register_translations(MODULE)
@@ -65,10 +61,15 @@ def _run():
         assert t("Cancel") == "\u53d6\u6d88", t("Cancel")
         assert t("Step: {step}", step="Export") == "\u6b65\u9aa4: Export"
 
-        # The "*" context (used for RNA property labels) must also hit:
-        # this is what regressed on Blender 4.x when only zh_CN existed.
+        # The UI draws property labels and operator buttons in dedicated
+        # contexts. Registering only '*' and 'AutoTopo' leaves these
+        # English (issue #7), so assert the real contexts Blender uses.
         assert bpy.app.translations.pgettext_iface(
-            "Target Face Count", "*") != "Target Face Count"
+            "Target Face Count", "RNA") == "\\u76ee\\u6807\\u9762\\u6570"
+        assert bpy.app.translations.pgettext_iface(
+            "Adaptive Density", "RNA") == "\\u81ea\\u9002\\u5e94\\u5bc6\\u5ea6"
+        assert bpy.app.translations.pgettext_iface(
+            "Retopologize", "Operator") == "\\u6267\\u884c\\u62d3\\u6251\\u91cd\\u5efa"
 
         # Re-enable path: registering again must replace, not raise.
         register_translations(MODULE)
