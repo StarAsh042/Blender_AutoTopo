@@ -261,8 +261,9 @@ _ENTRIES = {
 }
 
 TRANSLATIONS = {
-    "zh_CN": {
+    locale: {
         **{("*", msgid): text for msgid, text in _ENTRIES.items()},
         **{("AutoTopo", msgid): text for msgid, text in _ENTRIES.items()},
-    },
+    }
+    for locale in ("zh_HANS", "zh_CN")
 }

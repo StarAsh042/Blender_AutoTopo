@@ -39,6 +39,16 @@ def _run():
 
     prefs = bpy.context.preferences.view
     original = prefs.language
+    # Blender 3.x calls Simplified Chinese "zh_CN"; 4.0+ calls it
+    # "zh_HANS" (BCP 47). Pick whichever this build accepts so the test
+    # actually reaches the translation assertions on every version.
+    zh = next(
+        (code for code in ("zh_HANS", "zh_CN")
+         if code in {item.identifier for item in
+                     prefs.bl_rna.properties['language'].enum_items}),
+        None,
+    )
+    assert zh is not None, "no Simplified Chinese locale in this Blender"
     try:
         register_translations(MODULE)
 
@@ -46,7 +56,7 @@ def _run():
         assert t("Engine") == "Engine", t("Engine")
         assert t("Cancel") == "Cancel", t("Cancel")
 
-        prefs.language = 'zh_CN'
+        prefs.language = zh
         # Escape non-ASCII literals on purpose: Blender's ``--python``
         # reads this file with the system encoding on Windows, while
         # imported modules are decoded as UTF-8. Keeping this file pure
@@ -54,6 +64,11 @@ def _run():
         assert t("Engine") == "\u7b97\u6cd5\u5f15\u64ce", t("Engine")
         assert t("Cancel") == "\u53d6\u6d88", t("Cancel")
         assert t("Step: {step}", step="Export") == "\u6b65\u9aa4: Export"
+
+        # The "*" context (used for RNA property labels) must also hit:
+        # this is what regressed on Blender 4.x when only zh_CN existed.
+        assert bpy.app.translations.pgettext_iface(
+            "Target Face Count", "*") != "Target Face Count"
 
         # Re-enable path: registering again must replace, not raise.
         register_translations(MODULE)
@@ -71,7 +86,7 @@ def _run():
         register_translations(MODULE)
         unregister_translations(MODULE)
         register_translations(MODULE)
-        prefs.language = 'zh_CN'
+        prefs.language = zh
         assert t("Engine") == "\u7b97\u6cd5\u5f15\u64ce"
         unregister_translations(MODULE)
     finally:
