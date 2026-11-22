@@ -11,6 +11,7 @@ Blender 3.4+ 自动重拓扑插件：从高面数模型自动生成四边面主�
 - **多引擎架构**：AutoRemesher / QuadriFlow / QuadWild 三引擎可切换；每个引擎自行声明参数，面板自动适配。
 - **剪影误差评估**、**自适应密度**、**锐边特征保留**。
 - **后台线程执行**，UI 不卡顿；进度条只读展示，错误信息中文化并给出建议动作。
+- **双语界面**：面板、按钮、参数与提示跟随 Blender 界面语言切换（兼容 Blender 3.4+）。
 - **原生 Rust 加速**（锐边导出 / 轮廓误差），缺失时自动降级纯 numpy，结果一致。
 
 ---
@@ -27,7 +28,7 @@ Blender 3.4+ 自动重拓扑插件：从高面数模型自动生成四边面主�
 
 ## 安装
 
-1. 取得安装包 `dist/Blender_AutoTopo-2.1.0.zip`（或运行 `python scripts/package_addon.py` 重新打包）。
+1. 取得安装包 `dist/Blender_AutoTopo-2.2.0.zip`（或运行 `python scripts/package_addon.py` 重新打包）。
 2. Blender → `Edit ▸ Preferences ▸ Add-ons ▸ Install…`，选择该 zip。
 3. 启用 **AutoTopo**。
 4. 打开 3D 视图右侧边栏（`N` 面板）→「**AutoTopo**」标签页（中文界面显示为「自动拓扑」）。
@@ -119,7 +120,7 @@ Blender 3.4+ 自动重拓扑插件：从高面数模型自动生成四边面主�
 python scripts/package_addon.py
 ```
 
-生成 `dist/Blender_AutoTopo-2.1.0.zip`（含全部插件文件，排除开发/CI 产物）。
+生成 `dist/Blender_AutoTopo-2.2.0.zip`（含全部插件文件，排除开发/CI 产物）。
 
 ---
 
