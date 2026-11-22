@@ -189,8 +189,9 @@ def test_translations_register_both_locale_keys():
     """
     translations = _CATALOG.TRANSLATIONS
     expected = {
-        **{("*", msgid): text for msgid, text in _CATALOG._ENTRIES.items()},
-        **{("AutoTopo", msgid): text for msgid, text in _CATALOG._ENTRIES.items()},
+        (context, msgid): text
+        for context in ("*", "AutoTopo", "Operator", "RNA")
+        for msgid, text in _CATALOG._ENTRIES.items()
     }
     for locale in ("zh_CN", "zh_HANS"):
         assert locale in translations, f"missing locale key: {locale}"

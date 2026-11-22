@@ -65,11 +65,11 @@ def _run():
         # contexts. Registering only '*' and 'AutoTopo' leaves these
         # English (issue #7), so assert the real contexts Blender uses.
         assert bpy.app.translations.pgettext_iface(
-            "Target Face Count", "RNA") == "\\u76ee\\u6807\\u9762\\u6570"
+            "Target Face Count", "RNA") == "\u76ee\u6807\u9762\u6570"
         assert bpy.app.translations.pgettext_iface(
-            "Adaptive Density", "RNA") == "\\u81ea\\u9002\\u5e94\\u5bc6\\u5ea6"
+            "Adaptive Density", "RNA") == "\u81ea\u9002\u5e94\u5bc6\u5ea6"
         assert bpy.app.translations.pgettext_iface(
-            "Retopologize", "Operator") == "\\u6267\\u884c\\u62d3\\u6251\\u91cd\\u5efa"
+            "Retopologize", "Operator") == "\u6267\u884c\u62d3\u6251\u91cd\u5efa"
 
         # Re-enable path: registering again must replace, not raise.
         register_translations(MODULE)
