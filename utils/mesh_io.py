@@ -218,7 +218,11 @@ def mesh_data_to_blender(
 
     # Set vertex normals if available
     if mesh_data.normals is not None and len(mesh_data.normals) == n_verts:
-        mesh.use_auto_smooth = True
+        # Blender 4.1 removed Mesh.use_auto_smooth. From 4.1+ custom split
+        # normals are always in effect, so only set the legacy flag when it
+        # still exists (Blender 3.x compatibility). See issue #8.
+        if hasattr(mesh, "use_auto_smooth"):
+            mesh.use_auto_smooth = True
         normals_list = [tuple(n.tolist()) for n in mesh_data.normals]
         mesh.normals_split_custom_set_from_vertices(normals_list)
 
