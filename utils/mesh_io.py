@@ -4,7 +4,7 @@ import numpy as np
 from typing import Tuple, Optional, Dict, Any
 import bmesh
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 from ..utils.logger import logger
 
@@ -157,14 +157,21 @@ def blender_to_mesh_data(obj: bpy.types.Object) -> MeshData:
 def mesh_data_to_blender(
     mesh_data: MeshData,
     name: str = "AutoTopo_Output",
-    collection: Optional[bpy.types.Collection] = None
+    collection: Optional[bpy.types.Collection] = None,
+    matrix_world: Optional["Matrix"] = None,
 ) -> bpy.types.Object:
     """Convert MeshData to a Blender mesh object using bmesh.
+
+    ``mesh_data.vertices`` is in the source object's *local* space, because
+    ``blender_to_mesh_data`` extracts local coordinates. Pass the source
+    object's ``matrix_world`` as ``matrix_world`` so the result lands on top
+    of the input instead of at the world origin at unit scale.
 
     Args:
         mesh_data: MeshData containing the output mesh
         name: Name for the new object
         collection: Target collection (uses active collection if None)
+        matrix_world: Transform to give the new object; identity if None
 
     Returns:
         The newly created Blender object
@@ -173,7 +180,6 @@ def mesh_data_to_blender(
         raise ValueError("Invalid mesh data, cannot create Blender mesh")
 
     n_verts = mesh_data.n_verts
-    n_faces = mesh_data.n_faces
 
     # Use bmesh for reliable mesh creation
     bm = bmesh.new()
@@ -197,11 +203,26 @@ def mesh_data_to_blender(
         for f in mesh_data.faces:
             all_output_faces.append(tuple(int(x) for x in f))
 
+    skipped_faces = 0
     for face_verts in all_output_faces:
         try:
             bm.faces.new([bm_verts[i] for i in face_verts])
         except ValueError:
-            pass  # Skip degenerate faces
+            # Degenerate or duplicate face: skip it, but count it so the
+            # reported face count matches the geometry we actually built.
+            skipped_faces += 1
+
+    if skipped_faces:
+        logger.warning(
+            "Skipped %d degenerate/duplicate faces out of %d while building '%s'",
+            skipped_faces, len(all_output_faces), name,
+        )
+
+    # Smooth shading: a retopologized surface is meant to read as one smooth
+    # shell. Without this every polygon is flat-shaded, which both looks
+    # faceted and overrides the custom normals we write below.
+    for face in bm.faces:
+        face.smooth = True
 
     # Write bmesh to a new Blender mesh
     mesh = bpy.data.meshes.new(name)
@@ -229,6 +250,11 @@ def mesh_data_to_blender(
     # Create object
     obj = bpy.data.objects.new(name, mesh)
 
+    # Vertices are in the source object's local space, so the result needs the
+    # source transform or it lands at the origin at unit scale.
+    if matrix_world is not None:
+        obj.matrix_world = matrix_world
+
     # Link to collection
     if collection is None:
         collection = bpy.context.collection
@@ -236,7 +262,7 @@ def mesh_data_to_blender(
 
     logger.info(
         f"Created Blender object '{name}': "
-        f"{n_verts} vertices, {n_faces} faces"
+        f"{n_verts} vertices, {len(mesh.polygons)} faces"
     )
     return obj
 

@@ -69,6 +69,7 @@ _pipeline_result = None
 _pipeline_error = ""
 _input_mesh = None
 _obj_name = ""
+_source_matrix = None
 _cancel_requested = False
 
 
@@ -252,7 +253,7 @@ def _poll_timer():
 
 def _handle_pipeline_done(result):
     """Handle pipeline completion on main thread."""
-    global _obj_name
+    global _obj_name, _source_matrix
 
     for scene in bpy.data.scenes:
         if not hasattr(scene, 'auto_topo'):
@@ -265,7 +266,13 @@ def _handle_pipeline_done(result):
                 output_obj = mesh_data_to_blender(
                     result.output_mesh,
                     name=f"{_obj_name}_retopo",
+                    matrix_world=_source_matrix,
                 )
+                # Degenerate/duplicate faces are dropped while building the
+                # mesh (mesh_data_to_blender logs the count), so report what
+                # actually landed in Blender instead of the engine's
+                # pre-filter count.
+                result.output_face_count = len(output_obj.data.polygons)
                 _fill_result_info(props, result, output_obj)
             except Exception as e:
                 import traceback
@@ -333,6 +340,7 @@ class AUTOTOPO_OT_Retopologize(Operator):
     def execute(self, context):
         global _progress_step, _progress_pct, _pipeline_result, _pipeline_error
         global _input_mesh, _obj_name, _progress_last_raw, _progress_repeat
+        global _source_matrix
 
         # Defense check: ensure a mesh object is selected
         obj = context.active_object
@@ -359,6 +367,9 @@ class AUTOTOPO_OT_Retopologize(Operator):
         _pipeline_result = None
         _pipeline_error = ""
         _obj_name = obj.name
+        # The result mesh is built in this object's local space, so carry the
+        # world transform across to place it back on the original.
+        _source_matrix = obj.matrix_world.copy()
 
         # ── Build the engine settings dict (registry-driven) ──
         settings = {}
