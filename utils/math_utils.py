@@ -31,12 +31,45 @@ def compute_face_normals(
     return normals / norms
 
 
+def _usable_triangles(
+    faces: np.ndarray,
+    face_normals: np.ndarray,
+    face_areas: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Drop triangles that carry no usable surface direction.
+
+    A zero-area triangle has no normal, and a triangle that appears twice is
+    still one surface. Counting either one twice is what cancels a vertex out:
+    the QuadWild output on a 950k-face scan contained 774 overlapping triangles
+    (227 of them wound opposite), which left 779 of 6864 vertex normals summing
+    to exactly (0, 0, 0). Blender 3.4 stores such a normal literally and shades
+    the surface wrong -- the regression behind issue #8. Trimesh filters invalid
+    faces out of its vertex-normal accumulation for the same reason.
+
+    Duplicate detection keeps the first winding it sees, so direction survives.
+    """
+    keep = face_areas > 0.0
+    faces, face_normals, face_areas = faces[keep], face_normals[keep], face_areas[keep]
+
+    if len(faces) > 1:
+        _unique, first = np.unique(np.sort(faces, axis=1), axis=0, return_index=True)
+        if len(first) != len(faces):
+            first = np.sort(first)
+            faces, face_normals, face_areas = faces[first], face_normals[first], face_areas[first]
+
+    return faces, face_normals, face_areas
+
+
 def compute_vertex_normals(
     vertices: np.ndarray,
     faces: np.ndarray,
     face_normals: Optional[np.ndarray] = None
 ) -> np.ndarray:
     """Compute per-vertex normals (area-weighted average of face normals).
+
+    Degenerate and duplicate triangles are dropped first so a vertex only
+    averages real surface: see ``_usable_triangles``. The remaining vertices
+    with no usable normal sit on geometry with no area, which draws nothing.
 
     Args:
         vertices: (N, 3) vertex positions
@@ -47,6 +80,8 @@ def compute_vertex_normals(
         normals: (N, 3) per-vertex unit normals
     """
     n_verts = len(vertices)
+    if len(faces) == 0:
+        return np.zeros((n_verts, 3), dtype=np.float64)
     if face_normals is None:
         face_normals = compute_face_normals(vertices, faces)
 
@@ -55,6 +90,12 @@ def compute_vertex_normals(
     v1 = vertices[faces[:, 1]]
     v2 = vertices[faces[:, 2]]
     face_areas = 0.5 * np.linalg.norm(np.cross(v1 - v0, v2 - v0), axis=1)
+
+    faces, face_normals, face_areas = _usable_triangles(
+        faces, face_normals, face_areas
+    )
+    if len(faces) == 0:
+        return np.zeros((n_verts, 3), dtype=np.float64)
 
     vert_normals = np.zeros((n_verts, 3), dtype=np.float64)
     weighted_normals = face_normals * face_areas[:, np.newaxis]
@@ -65,6 +106,73 @@ def compute_vertex_normals(
     norms = np.linalg.norm(vert_normals, axis=1, keepdims=True)
     norms = np.maximum(norms, 1e-12)
     return vert_normals / norms
+
+
+def loop_normals_are_trustworthy(normals: np.ndarray) -> bool:
+    """True when a loop-normal read can be believed.
+
+    A unit normal is at most 1 long, so anything far past that is uninitialised
+    memory rather than data. On 3.6 ``loops.foreach_get("normal")`` returns
+    exactly that for a mesh that was just written: values up to 1e38, or NaN.
+    The repair must never treat such a buffer as geometry and write it back,
+    which is what produced the broken 3.6 surface in issue #8.
+
+    Args:
+        normals: (L, 3) normals as read back from Blender.
+
+    Returns:
+        False when the buffer is visibly not a set of unit normals.
+    """
+    if len(normals) == 0:
+        return True
+    if not np.isfinite(normals).all():
+        return False
+    return float(np.linalg.norm(normals, axis=1).max()) <= 10.0
+
+
+def plan_loop_normal_repair(
+    stored: np.ndarray,
+    face_of_loop: np.ndarray,
+    face_normals: np.ndarray,
+    face_areas: np.ndarray,
+) -> Tuple[np.ndarray, int]:
+    """Replace loop normals that came back zero with their face normal.
+
+    Blender before 4.1 stores a custom split normal as a short2 offset from the
+    loop's own reference normal, so a normal exactly opposite that reference is
+    the singularity of the encoding and decodes as a zero vector. On 4.1+ the
+    same thing happens when the vertex normal handed in was zero because the
+    vertex only touches faces the build dropped. Either way the loop has no
+    direction and shades as a hole, which is the "degenerate" look reported on
+    Blender 3.4 in issue #8.
+
+    Pure, because no synthetic mesh reproduces the singularity on demand: the
+    only honest test is to feed it numbers Blender actually read back.
+
+    Args:
+        stored: (L, 3) normals as Blender read them back.
+        face_of_loop: (L,) polygon index owning each loop.
+        face_normals: (F, 3) polygon normals.
+        face_areas: (F,) polygon areas.
+
+    Returns:
+        (repaired (L, 3) normals, number of loops changed). Loops on a
+        zero-area face are left alone, since that face has no direction to
+        lend them.
+    """
+    repaired = stored.copy()
+    if len(repaired) == 0:
+        return repaired, 0
+
+    broken = np.linalg.norm(repaired, axis=1) <= 1e-6
+    if not broken.any():
+        return repaired, 0
+
+    usable = broken & (face_areas[face_of_loop] > 0.0)
+    count = int(usable.sum())
+    if count:
+        repaired[usable] = face_normals[face_of_loop[usable]]
+    return repaired, count
 
 
 def compute_dihedral_angles(
