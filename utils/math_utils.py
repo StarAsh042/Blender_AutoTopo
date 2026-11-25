@@ -122,6 +122,60 @@ def compute_dihedral_angles(
     return he_sorted[first], angles
 
 
+def count_surface_shells(
+    n_verts: int,
+    edges: np.ndarray,
+    max_iters: int = 256,
+) -> int:
+    """Count disconnected surface shells (connected components of the edge graph).
+
+    QuadWild's cost tracks the number of disconnected shells, not the vertex
+    count: on one scanned asset, 97k verts in 20 shells finished in 211s while
+    16k verts in 746 shells was still running after 420s. The engine needs this
+    number before committing to a solve that cannot be interrupted.
+
+    Vertices that belong to no edge are not part of any surface and are not
+    counted, matching the face components bmesh reports for the same mesh.
+
+    Args:
+        n_verts: vertex count of the mesh
+        edges: (E, 2) vertex index pairs
+        max_iters: hooking rounds before giving up on full convergence. Long
+            thin shells need many rounds: a 535k-vert scan still had 843
+            shells at 32 rounds and only reached 797 at 100.
+
+    Returns:
+        Number of disconnected surface shells.
+    """
+    if n_verts == 0 or len(edges) == 0:
+        return 0
+
+    edges = np.asarray(edges, dtype=np.int64).reshape(-1, 2)
+    a = edges[:, 0]
+    b = edges[:, 1]
+
+    parent = np.arange(n_verts, dtype=np.int64)
+    for _ in range(max_iters):
+        pa = parent[a]
+        pb = parent[b]
+        new = parent.copy()
+        # Hook each endpoint to the smaller of the two roots. ``minimum.at``
+        # keeps the minimum across duplicate indices; plain ``parent[idx] = v``
+        # would keep the last write and split components apart.
+        np.minimum.at(new, a, pb)
+        np.minimum.at(new, b, pa)
+        # Pointer jumping halves every remaining chain per round.
+        new = new[new]
+        if np.array_equal(new, parent):
+            break
+        parent = new
+
+    used = np.zeros(n_verts, dtype=bool)
+    used[a] = True
+    used[b] = True
+    return int(len(np.unique(parent[used])))
+
+
 def compute_bounding_box(vertices: np.ndarray) -> Tuple[np.ndarray, float]:
     """Compute bounding box and diagonal length.
 
