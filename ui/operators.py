@@ -8,6 +8,7 @@ then runs the engine on a background worker thread.
 """
 
 import os
+import re
 import bpy
 import time
 import threading
@@ -69,6 +70,7 @@ _pipeline_result = None
 _pipeline_error = ""
 _input_mesh = None
 _obj_name = ""
+_source_matrix = None
 _cancel_requested = False
 
 
@@ -112,9 +114,44 @@ def _to_friendly_error(err) -> str:
                  "and lib_quadpatches.dll are in the addon's bin/quadwild "
                  "directory, then restart Blender and try again.")
 
-    # Executable missing (AutoRemesher / QuadriFlow)
-    if ("未找到" in text or "autoremesher" in low or "quadriflow" in low
-            or "可执行" in text or "exe" in low):
+    # Engine process crashed or exited non-zero. Must run before the
+    # "missing executable" branch: those messages name the engine
+    # ("QuadriFlow 执行失败（退出码 ...）"), so a substring test on the
+    # engine name would otherwise swallow the real cause.
+    if "执行失败（退出码" in text or "exit code" in low \
+            or "returncode" in low or "退出码" in text:
+        code_match = re.search(r"(\d{6,})", text)
+        code = code_match.group(1) if code_match else "?"
+        if code.isdigit():
+            code = f"{code} / 0x{int(code):08X}"
+        return t("The engine process failed: exit code {code}. The input "
+                 "mesh is probably too complex for this engine. Try another "
+                 "engine, lower the target face count, or reduce the mesh "
+                 "detail, then retry. See the log for details.", code=code)
+
+    # Engine ran longer than its wall-clock budget. Covers every engine: the
+    # AutoRemesher / QuadriFlow subprocess timeouts and QuadWild's between-stage
+    # budget all carry "超时" or "timed out".
+    if "超时" in text or "timed out" in low or "timeout" in low:
+        return t("The engine timed out: the mesh is too heavy for it to "
+                 "finish in time. Lower the target face count, simplify the "
+                 "mesh, or choose another engine, then retry. See the log for "
+                 "details.")
+
+    # QuadWild rejects fragmented input up front: it cannot interrupt its own
+    # native solve, so hundreds of separate shells would hang the addon.
+    if "disconnected shells" in low:
+        return t("QuadWild cannot handle this mesh: it is split into too many "
+                 "separate pieces, which this engine cannot solve in "
+                 "reasonable time. Merge the parts into a single surface "
+                 "(Voxel Remesh or Merge by Distance) or choose another "
+                 "engine, then retry.")
+
+    # Executable missing (AutoRemesher / QuadriFlow). Deliberately narrow:
+    # only genuine "cannot find the file" phrasing qualifies, never a bare
+    # engine name or the substring "exe".
+    if ("未找到" in text or "not found" in low or "no such file" in low
+            or "找不到" in text or "filenotfound" in low):
         return t("External executable not found: make sure the engine is "
                  "bundled or set the correct executable path in the addon "
                  "preferences, then try again.")
@@ -252,7 +289,7 @@ def _poll_timer():
 
 def _handle_pipeline_done(result):
     """Handle pipeline completion on main thread."""
-    global _obj_name
+    global _obj_name, _source_matrix
 
     for scene in bpy.data.scenes:
         if not hasattr(scene, 'auto_topo'):
@@ -265,7 +302,13 @@ def _handle_pipeline_done(result):
                 output_obj = mesh_data_to_blender(
                     result.output_mesh,
                     name=f"{_obj_name}_retopo",
+                    matrix_world=_source_matrix,
                 )
+                # Degenerate/duplicate faces are dropped while building the
+                # mesh (mesh_data_to_blender logs the count), so report what
+                # actually landed in Blender instead of the engine's
+                # pre-filter count.
+                result.output_face_count = len(output_obj.data.polygons)
                 _fill_result_info(props, result, output_obj)
             except Exception as e:
                 import traceback
@@ -333,6 +376,7 @@ class AUTOTOPO_OT_Retopologize(Operator):
     def execute(self, context):
         global _progress_step, _progress_pct, _pipeline_result, _pipeline_error
         global _input_mesh, _obj_name, _progress_last_raw, _progress_repeat
+        global _source_matrix
 
         # Defense check: ensure a mesh object is selected
         obj = context.active_object
@@ -359,6 +403,9 @@ class AUTOTOPO_OT_Retopologize(Operator):
         _pipeline_result = None
         _pipeline_error = ""
         _obj_name = obj.name
+        # The result mesh is built in this object's local space, so carry the
+        # world transform across to place it back on the original.
+        _source_matrix = obj.matrix_world.copy()
 
         # ── Build the engine settings dict (registry-driven) ──
         settings = {}

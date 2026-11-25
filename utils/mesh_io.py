@@ -4,9 +4,10 @@ import numpy as np
 from typing import Tuple, Optional, Dict, Any
 import bmesh
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 from ..utils.logger import logger
+from ..utils.math_utils import loop_normals_are_trustworthy, plan_loop_normal_repair
 
 
 class MeshData:
@@ -154,17 +155,115 @@ def blender_to_mesh_data(obj: bpy.types.Object) -> MeshData:
     return mesh_data
 
 
+def _read_loop_normals(mesh) -> np.ndarray:
+    """Return the normals Blender will actually shade with, one per loop.
+
+    Prefers ``corner_normals``, which is the only read path that agrees with the
+    shaded result on every build. 3.6 ships both the legacy and the modern API,
+    and its legacy pair, ``calc_normals_split()`` plus
+    ``loops.foreach_get("normal")``, intermittently reports uninitialised memory
+    or stale zeros on a mesh that was just written. Reading through it made the
+    repair below see garbage and write that garbage back into the mesh, which is
+    the broken surface reported on 3.6. See issue #8.
+
+    Call this only once the object is linked and the view layer updated: before
+    that even ``corner_normals`` is empty.
+    """
+    corners = getattr(mesh, "corner_normals", None)
+    if corners is not None and len(corners) == len(mesh.loops):
+        return np.array([tuple(c.vector) for c in corners], dtype=np.float64)
+
+    if hasattr(mesh, "calc_normals_split"):
+        # 2.9-3.4: no corner normal cache, but the split cache must exist first.
+        mesh.calc_normals_split()
+        return np.array([tuple(loop.normal) for loop in mesh.loops], dtype=np.float64)
+
+    out = np.zeros((len(mesh.loops), 3), dtype=np.float64)
+    mesh.loops.foreach_get("normal", out.ravel())
+    return out
+
+
+def _repair_unrepresentable_loop_normals(mesh) -> int:
+    """Give loops whose stored normal came back zero their face normal instead.
+
+    Blender before 4.1 stores a custom split normal as a short2 offset from the
+    loop's own reference normal, so a normal exactly opposite that reference is
+    the singularity of the encoding and decodes as a zero vector. On 4.1+ the
+    same thing happens when the vertex normal we were handed is zero because the
+    vertex only touches faces the build dropped. Either way the loop has no
+    direction and shades as a hole, which is the "degenerate" look reported on
+    3.4 (issue #8).
+
+    Runs after the custom normals are written and reads back what Blender
+    actually stored, so it touches only loops that lost their normal. Every
+    other loop keeps exactly the normal the engine produced.
+
+    Returns the number of loops repaired.
+    """
+    stored = _read_loop_normals(mesh)
+    if not loop_normals_are_trustworthy(stored):
+        # Nothing trustworthy to repair against: leave the mesh exactly as it is
+        # rather than writing a value we could not read.
+        return 0
+    face_normals = np.zeros((len(mesh.polygons), 3), dtype=np.float64)
+    mesh.polygons.foreach_get("normal", face_normals.ravel())
+    face_areas = np.zeros(len(mesh.polygons), dtype=np.float64)
+    mesh.polygons.foreach_get("area", face_areas)
+
+    face_of_loop = np.zeros(len(mesh.loops), dtype=np.int64)
+    for p in mesh.polygons:
+        face_of_loop[p.loop_start:p.loop_start + p.loop_total] = p.index
+
+    repaired, count = plan_loop_normal_repair(
+        stored, face_of_loop, face_normals, face_areas
+    )
+    if count == 0:
+        return 0  # the broken loops all sit on faces with no direction either
+
+    mesh.normals_split_custom_set([tuple(v) for v in repaired.tolist()])
+    logger.warning(
+        "Repaired %d loop normal(s) Blender could not store on '%s'",
+        count, mesh.name,
+    )
+    return count
+
+
+def _is_zero_area(vertices: np.ndarray, face: Tuple[int, ...]) -> bool:
+    """True when a polygon encloses no area, so it has no normal direction.
+
+    Uses Newell's method, which sums the cross products of consecutive edges.
+    For a quad that is folded flat the two fan triangles cancel exactly, and a
+    plain fan cross product would report area that the polygon does not have.
+    """
+    acc = np.zeros(3, dtype=np.float64)
+    count = len(face)
+    for i in range(count):
+        x0, y0, z0 = vertices[face[i]]
+        x1, y1, z1 = vertices[face[(i + 1) % count]]
+        acc[0] += (y0 - y1) * (z0 + z1)
+        acc[1] += (z0 - z1) * (x0 + x1)
+        acc[2] += (x0 - x1) * (y0 + y1)
+    return float(acc[0] ** 2 + acc[1] ** 2 + acc[2] ** 2) == 0.0
+
+
 def mesh_data_to_blender(
     mesh_data: MeshData,
     name: str = "AutoTopo_Output",
-    collection: Optional[bpy.types.Collection] = None
+    collection: Optional[bpy.types.Collection] = None,
+    matrix_world: Optional["Matrix"] = None,
 ) -> bpy.types.Object:
     """Convert MeshData to a Blender mesh object using bmesh.
+
+    ``mesh_data.vertices`` is in the source object's *local* space, because
+    ``blender_to_mesh_data`` extracts local coordinates. Pass the source
+    object's ``matrix_world`` as ``matrix_world`` so the result lands on top
+    of the input instead of at the world origin at unit scale.
 
     Args:
         mesh_data: MeshData containing the output mesh
         name: Name for the new object
         collection: Target collection (uses active collection if None)
+        matrix_world: Transform to give the new object; identity if None
 
     Returns:
         The newly created Blender object
@@ -173,7 +272,6 @@ def mesh_data_to_blender(
         raise ValueError("Invalid mesh data, cannot create Blender mesh")
 
     n_verts = mesh_data.n_verts
-    n_faces = mesh_data.n_faces
 
     # Use bmesh for reliable mesh creation
     bm = bmesh.new()
@@ -197,11 +295,33 @@ def mesh_data_to_blender(
         for f in mesh_data.faces:
             all_output_faces.append(tuple(int(x) for x in f))
 
+    skipped_faces = 0
     for face_verts in all_output_faces:
+        if _is_zero_area(mesh_data.vertices, face_verts):
+            # bmesh accepts a sliver whose corners are collinear, but it has no
+            # direction to shade with. On 4.1+ that leaves a zero-length custom
+            # normal that even the repair below cannot fix, because the face has
+            # no normal to lend it. It covers no pixels, so drop it.
+            skipped_faces += 1
+            continue
         try:
             bm.faces.new([bm_verts[i] for i in face_verts])
         except ValueError:
-            pass  # Skip degenerate faces
+            # Degenerate or duplicate face: skip it, but count it so the
+            # reported face count matches the geometry we actually built.
+            skipped_faces += 1
+
+    if skipped_faces:
+        logger.warning(
+            "Skipped %d degenerate/duplicate faces out of %d while building '%s'",
+            skipped_faces, len(all_output_faces), name,
+        )
+
+    # Smooth shading: a retopologized surface is meant to read as one smooth
+    # shell. Without this every polygon is flat-shaded, which both looks
+    # faceted and overrides the custom normals we write below.
+    for face in bm.faces:
+        face.smooth = True
 
     # Write bmesh to a new Blender mesh
     mesh = bpy.data.meshes.new(name)
@@ -218,21 +338,38 @@ def mesh_data_to_blender(
 
     # Set vertex normals if available
     if mesh_data.normals is not None and len(mesh_data.normals) == n_verts:
-        mesh.use_auto_smooth = True
+        # Blender 4.1 removed Mesh.use_auto_smooth. From 4.1+ custom split
+        # normals are always in effect, so only set the legacy flag when it
+        # still exists (Blender 3.x compatibility). See issue #8.
+        if hasattr(mesh, "use_auto_smooth"):
+            mesh.use_auto_smooth = True
         normals_list = [tuple(n.tolist()) for n in mesh_data.normals]
         mesh.normals_split_custom_set_from_vertices(normals_list)
 
     # Create object
     obj = bpy.data.objects.new(name, mesh)
 
+    # Vertices are in the source object's local space, so the result needs the
+    # source transform or it lands at the origin at unit scale.
+    if matrix_world is not None:
+        obj.matrix_world = matrix_world
+
     # Link to collection
     if collection is None:
         collection = bpy.context.collection
     collection.objects.link(obj)
 
+    if mesh_data.normals is not None and len(mesh_data.normals) == n_verts:
+        # Only now can the stored normals be read back. Before the object is
+        # linked and evaluated, Blender reports either uninitialised memory or an
+        # empty cache -- on 3.6 that made this repair read garbage and write it
+        # into the mesh. See issue #8.
+        bpy.context.view_layer.update()
+        _repair_unrepresentable_loop_normals(mesh)
+
     logger.info(
         f"Created Blender object '{name}': "
-        f"{n_verts} vertices, {n_faces} faces"
+        f"{n_verts} vertices, {len(mesh.polygons)} faces"
     )
     return obj
 
