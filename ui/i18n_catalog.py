@@ -106,6 +106,11 @@ _ENTRIES = {
         "放宽容差后重试。",
     "Processing failed: {summary} (see the log for details)":
         "处理失败：{summary}（详细信息见日志）",
+    "The engine process failed: exit code {code}. The input mesh is probably "
+    "too complex for this engine. Try another engine, lower the target face "
+    "count, or reduce the mesh detail, then retry. See the log for details.":
+        "引擎进程异常退出：退出码 {code}。通常是输入网格对该引擎而言过于复杂。"
+        "请改用其他引擎、降低目标面数或先精简网格后重试（详细信息见日志）。",
 
     # ── Preferences (slice 3) ──
     "AutoRemesher Executable": "AutoRemesher 可执行文件",
@@ -257,6 +262,22 @@ _ENTRIES = {
     "Tracing streamlines...": "流线追踪...",
     "Quadrangulation...": "四边面化...",
     "Adaptive detail subdivision...": "自适应细节细分...",
+
+    "The engine timed out: the mesh is too heavy for it to "
+    "finish in time. Lower the target face count, simplify the "
+    "mesh, or choose another engine, then retry. See the log for "
+    "details.":
+        "引擎超时：网格对该引擎而言过重，无法在时限内完成。"
+        "请降低目标面数、精简网格，或改用其他引擎后重试（详细信息见日志）。",
+
+    "QuadWild cannot handle this mesh: it is split into too many "
+    "separate pieces, which this engine cannot solve in "
+    "reasonable time. Merge the parts into a single surface "
+    "(Voxel Remesh or Merge by Distance) or choose another "
+    "engine, then retry.":
+        "QuadWild 无法处理该网格：模型被拆成了过多独立碎片，"
+        "该引擎无法在合理时间内求解。请先合并为单一表面"
+        "（体素重网格或按距离合并），或改用其他引擎后重试。",
 
 }
 
