@@ -32,7 +32,7 @@ import _pkgload  # noqa: E402
 _pkgload._ensure_packages()
 
 _PROJECT_ROOT = os.path.dirname(_HERE)
-ZIP_PATH = os.path.join(_PROJECT_ROOT, "dist", "Blender_AutoTopo-2.2.0.zip")
+ZIP_PATH = os.path.join(_PROJECT_ROOT, "dist", "Blender_AutoTopo-2.3.0.zip")
 PREFIX = "Blender_AutoTopo/"
 
 MAX_ARCHIVE_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -57,12 +57,18 @@ EXCLUDED_SUBSTRINGS = (
 # so the staleness walk never treats a build/CI cache as a source file.
 _WALK_EXCLUDES = {
     ".workbuddy-ai",
+    ".workbuddy",
+    ".dsh-ops",
+    "fbx",
+    "tmp",
     "deliverables",
     "dist",
     ".pytest_cache",
     "__pycache__",
     ".git",
+    ".github",
     "node_modules",
+    "target",
 }
 
 
@@ -71,7 +77,7 @@ def _skip_if_stale():
     if not os.path.exists(ZIP_PATH):
         pytest.skip(
             "打包产物尚未生成：先运行 `python scripts/package_addon.py` "
-            "生成 dist/Blender_AutoTopo-2.2.0.zip"
+            "生成 dist/Blender_AutoTopo-2.3.0.zip"
         )
     zip_mtime = os.path.getmtime(ZIP_PATH)
     newest = 0.0
