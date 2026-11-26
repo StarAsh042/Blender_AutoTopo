@@ -45,6 +45,7 @@ from ..utils.math_utils import (
     compute_dihedral_angles,
     compute_face_normals,
     compute_vertex_normals,
+    count_surface_shells,
 )
 from .evaluation import RetopoResult, compute_silhouette_error
 from .adaptive_subdivision import adaptive_subdivide
@@ -566,6 +567,38 @@ def _build_mesh_data(
 
 # ── Main entry point ──
 
+# Wall-clock budget for the native stages. QuadWild runs through ctypes, which
+# cannot interrupt a call in flight: the DLL exposes only remeshAndField2 /
+# trace2 / quadPatches, with no abort hook. A stuck solve can only be waited
+# out, so the budget is checked between stages and over-budget input is
+# rejected before the first native call.
+_TIMEOUT_SECONDS = 900
+
+# Measured on a 535k-vert scan (Blender 4.5.16, target 2000): cost tracks the
+# shell count, not the vertex count -- 20 shells / 97k verts took 211s, while
+# 746 shells / 16k verts was still running at 420s. ~8s per shell.
+_SECONDS_PER_SHELL = 8.0
+# 50 shells (~400s predicted, 608s measured) still completes.
+_MAX_PREDICTED_SECONDS = _TIMEOUT_SECONDS * 0.75
+
+
+def _estimate_runtime_seconds(n_shells: int) -> float:
+    """Rough wall-clock estimate for the native QuadWild stages."""
+    return _SECONDS_PER_SHELL * max(int(n_shells), 1)
+
+
+def _check_budget(time_start: float, stage: str) -> None:
+    """Stop between native stages once the wall-clock budget is spent."""
+    elapsed = time.time() - time_start
+    if elapsed <= _TIMEOUT_SECONDS:
+        return
+    raise RuntimeError(
+        f"QuadWild 超时：{stage} 阶段后已用时 {elapsed:.0f}s，"
+        f"超过上限 {_TIMEOUT_SECONDS}s。请降低目标面数、合并碎片网格，"
+        f"或改用其他引擎。"
+    )
+
+
 def run_quadwild(
     input_mesh: MeshData,
     target_face_count: int,
@@ -643,6 +676,28 @@ def run_quadwild(
         result.input_vert_count = input_mesh.n_verts
         result.input_face_count = input_mesh.n_faces
 
+        # QuadWild's cost tracks how many disconnected shells the mesh has, and
+        # a scanned asset routinely arrives with hundreds of separate islands.
+        # The DLL cannot be interrupted once running, so reject up front.
+        if input_mesh.edge_keys is not None and len(input_mesh.edge_keys):
+            n_shells = count_surface_shells(
+                input_mesh.n_verts, input_mesh.edge_keys,
+            )
+            estimate = _estimate_runtime_seconds(n_shells)
+            logger.info(
+                f"QuadWild: {n_shells} disconnected shells, "
+                f"estimated {estimate:.0f}s"
+            )
+            if estimate > _MAX_PREDICTED_SECONDS:
+                raise RuntimeError(
+                    f"QuadWild input has {n_shells} disconnected shells, "
+                    f"which this engine cannot solve in reasonable time "
+                    f"(estimated {estimate:.0f}s, limit "
+                    f"{_TIMEOUT_SECONDS}s). Merge the parts into one shell "
+                    f"(e.g. Voxel Remesh or Merge by Distance) or pick a "
+                    f"different engine."
+                )
+
         # Stage 0: export input mesh to OBJ
         report("Exporting mesh...", 5.0)
         t0 = time.time()
@@ -684,6 +739,7 @@ def run_quadwild(
         logger.info(f"Stage timing: remesh+field {time.time() - t0:.2f}s")
         if cancelled():
             raise InterruptedError("用户取消")
+        _check_budget(time_start, "Remeshing and computing the direction field")
 
         # Stage 2: field tracing
         report("Tracing streamlines...", 40.0 if adaptive_density else 45.0)
@@ -694,6 +750,7 @@ def run_quadwild(
             raise RuntimeError("QuadWild 流线追踪未生成输出")
         if cancelled():
             raise InterruptedError("用户取消")
+        _check_budget(time_start, "Tracing streamlines")
 
         # Stage 3: quadrangulation with adaptive scale factor
         scale_fact = 1.0
